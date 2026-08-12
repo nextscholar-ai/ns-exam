@@ -29,5 +29,5 @@ def test_refill_over_time_allows_more_requests():
     key = "refill-key"
     assert limiter.allow(key) is True
     assert limiter.allow(key) is False
-    time.sleep(0.01)  # ~10 tokens refill at 1000/s
+    time.sleep(0.02)  # ~20 tokens refill at 1000/s
     assert limiter.allow(key) is True

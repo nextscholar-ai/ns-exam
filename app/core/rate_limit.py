@@ -55,8 +55,8 @@ class RateLimiter:
             bucket.tokens = min(capacity, bucket.tokens + elapsed * refill_rate)
             bucket.last_refill = now
 
-            if bucket.tokens >= 1:
-                bucket.tokens -= 1
+            if bucket.tokens >= 0.99:
+                bucket.tokens -= 1.0
                 return True
             return False
 

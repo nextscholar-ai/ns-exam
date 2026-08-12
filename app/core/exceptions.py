@@ -87,3 +87,11 @@ class RateLimitedError(DomainError):
 # use either name interchangeably without duplicating logic.
 ValidationError = ValidationDomainError
 PermissionDeniedError = ForbiddenError
+
+# Aliases matching reference project exception naming conventions
+ResourceNotFoundException = NotFoundError
+BusinessLogicException = BusinessRuleError
+ValidationException = ValidationDomainError
+AuthenticationException = UnauthorizedError
+AuthorizationException = ForbiddenError
+

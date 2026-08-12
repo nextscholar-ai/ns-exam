@@ -15,7 +15,43 @@ import functools
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
-from cachetools import TTLCache
+try:
+    from cachetools import TTLCache
+except ImportError:
+    import time
+
+    class TTLCache(dict):
+        def __init__(self, maxsize: int = 512, ttl: int = 60) -> None:
+            super().__init__()
+            self.maxsize = maxsize
+            self.ttl = ttl
+            self._timestamps: dict[Any, float] = {}
+
+        def __getitem__(self, key: Any) -> Any:
+            if key in self._timestamps:
+                if time.time() - self._timestamps[key] > self.ttl:
+                    del self[key]
+                    del self._timestamps[key]
+                    raise KeyError(key)
+            return super().__getitem__(key)
+
+        def __setitem__(self, key: Any, value: Any) -> None:
+            if len(self) >= self.maxsize and key not in self:
+                oldest = min(self._timestamps, key=lambda k: self._timestamps[k], default=None)
+                if oldest is not None:
+                    del self[oldest]
+                    del self._timestamps[oldest]
+            super().__setitem__(key, value)
+            self._timestamps[key] = time.time()
+
+        def pop(self, key: Any, default: Any = None) -> Any:
+            self._timestamps.pop(key, None)
+            return super().pop(key, default)
+
+        def clear(self) -> None:
+            self._timestamps.clear()
+            super().clear()
+
 
 DEFAULT_TTL_SECONDS = 60
 DEFAULT_MAX_SIZE = 512
@@ -31,8 +67,10 @@ class AsyncTTLCache:
         self._cache: TTLCache = TTLCache(maxsize=maxsize, ttl=ttl_seconds)
 
     async def get_or_set(self, key: Any, factory: Callable[[], Awaitable[T]]) -> T:
-        if key in self._cache:
+        try:
             return self._cache[key]
+        except KeyError:
+            pass
         value = await factory()
         self._cache[key] = value
         return value

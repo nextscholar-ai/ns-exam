@@ -12,7 +12,10 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-import structlog
+try:
+    import structlog
+except ImportError:
+    structlog = None  # type: ignore
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
@@ -41,9 +44,13 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     (Phase 7 §11)."""
 
     async def dispatch(self, request: Request, call_next):
+        from app.core.logging import request_id_ctx
+
         request_id = request.headers.get(REQUEST_ID_HEADER, str(uuid.uuid4()))
-        structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(request_id=request_id)
+        if structlog is not None:
+            structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(request_id=request_id)
+        request_id_ctx.set(request_id)
         request.state.request_id = request_id
 
         start = time.perf_counter()

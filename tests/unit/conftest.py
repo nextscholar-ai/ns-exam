@@ -21,6 +21,16 @@ from app.modules.academic import models as academic_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.student import models as student_models  # noqa: F401
 from app.modules.teacher import models as teacher_models  # noqa: F401
+from app.modules.storage import models as storage_models  # noqa: F401
+from app.modules.question_bank import models as question_bank_models  # noqa: F401
+from app.modules.blueprint import models as blueprint_models  # noqa: F401
+from app.modules.paper_generation import models as paper_generation_models  # noqa: F401
+from app.modules.exam_management import models as exam_management_models  # noqa: F401
+from app.modules.evaluation import models as evaluation_models  # noqa: F401
+from app.modules.learning_profile import models as learning_profile_models  # noqa: F401
+from app.modules.recommendation import models as recommendation_models  # noqa: F401
+from app.modules.analytics import models as analytics_models  # noqa: F401
+from app.modules.reports import models as reports_models  # noqa: F401
 from app.core.db.base_model import Base
 
 

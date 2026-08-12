@@ -1,7 +1,25 @@
 """
-learning_profile module - event handlers this module subscribes to.
+Mastery Engine module — Domain Events (Phase 14 §11 / Phase 17 §3).
 
-Populated in Phase 14 (Learning/Mastery/Analytics/Recommendation). This file exists now (Phase 1) so the module is a real
-importable package with the standard internal structure (Phase 5 §7), even
-before it has business content.
+Real event publishers dispatching through `app.core.events.bus.event_bus`.
 """
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+
+from app.core.events.bus import event_bus
+from app.core.events.event_names import MASTERY_UPDATED
+
+
+@dataclass(frozen=True)
+class MasteryUpdated:
+    student_id: int
+    evaluation_public_id: str
+    topics_updated: int
+    chapters_updated: int
+    subjects_updated: int
+    weak_topic_ids: list[int]
+
+
+async def publish_mastery_updated(event: MasteryUpdated) -> None:
+    await event_bus.publish(MASTERY_UPDATED, asdict(event))

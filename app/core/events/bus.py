@@ -25,7 +25,7 @@ class EventBus:
 
     def subscribe(self, event_name: str, handler: Handler) -> None:
         self._subscribers[event_name].append(handler)
-        logger.info("event_bus.subscribed", event_name=event_name, handler=handler.__qualname__)
+        logger.info("event_bus.subscribed", event_name=event_name, handler=getattr(handler, "__qualname__", repr(handler)))
 
     async def publish(self, event_name: str, payload: dict[str, Any]) -> None:
         logger.info("event_bus.published", event_name=event_name, payload_keys=list(payload.keys()))
@@ -38,7 +38,7 @@ class EventBus:
                 logger.exception(
                     "event_bus.handler_failed",
                     event_name=event_name,
-                    handler=handler.__qualname__,
+                    handler=getattr(handler, "__qualname__", repr(handler)),
                 )
 
 

@@ -23,6 +23,7 @@ from app.core.middleware import (
 from app.core.rate_limit import rate_limiter
 from app.jobs.router import router as jobs_router
 from app.modules.identity.events import register_identity_event_handlers
+from app.core.events.handlers import register_all_handlers
 
 configure_logging()
 logger = get_logger(__name__)
@@ -32,6 +33,7 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("app.startup", env=settings.app_env, version=settings.app_version)
     register_identity_event_handlers()
+    register_all_handlers()
     yield
     logger.info("app.shutdown")
     await engine.dispose()

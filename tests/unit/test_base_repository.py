@@ -148,3 +148,61 @@ async def test_invalid_filter_key_raises_validation_error(sqlite_session):
     board_repo = BaseRepository(sqlite_session, Board)
     with pytest.raises(ValidationDomainError):
         await board_repo.list(filters={"not_a_real_column": "x"})
+
+
+@pytest.mark.asyncio
+async def test_get_or_raise_and_restore(sqlite_session):
+    from app.core.exceptions import NotFoundError
+
+    board_repo = BaseRepository(sqlite_session, Board)
+    board = await board_repo.create({"erp_id": "board-raise", "name": "Raise Board"})
+    await sqlite_session.flush()
+
+    found = await board_repo.get_or_raise(board.id)
+    assert found.name == "Raise Board"
+
+    await board_repo.soft_delete(board.id, deleted_by=1)
+    with pytest.raises(NotFoundError):
+        await board_repo.get_or_raise(board.id)
+
+    restored = await board_repo.restore(board.id)
+    assert restored.is_deleted is False
+
+
+@pytest.mark.asyncio
+async def test_bulk_operations_and_paginate(sqlite_session):
+    board_repo = BaseRepository(sqlite_session, Board)
+    created = await board_repo.bulk_create([
+        {"erp_id": f"board-bulk-{i}", "name": f"Board {i}"} for i in range(5)
+    ])
+    assert len(created) == 5
+
+    res = await board_repo.paginate(page=1, page_size=2)
+    assert res["page"] == 1
+    assert res["page_size"] == 2
+    assert len(res["items"]) == 2
+
+    updated_count = await board_repo.bulk_update([
+        {"id": created[0].id, "name": "Updated Board 0"},
+        {"id": created[1].id, "name": "Updated Board 1"},
+    ])
+    assert updated_count == 2
+
+    search_res = await board_repo.search(term="Updated", fields=["name"])
+    assert len(search_res) == 2
+
+
+@pytest.mark.asyncio
+async def test_first_or_create_and_upsert(sqlite_session):
+    board_repo = BaseRepository(sqlite_session, Board)
+    obj, is_new = await board_repo.first_or_create(defaults={"name": "New Board"}, erp_id="unique-erp-1")
+    assert is_new is True
+    assert obj.name == "New Board"
+
+    obj_again, is_new_again = await board_repo.first_or_create(defaults={"name": "New Board"}, erp_id="unique-erp-1")
+    assert is_new_again is False
+
+    upserted = await board_repo.upsert(match_fields={"erp_id": "unique-erp-1"}, data={"name": "Upserted Name"})
+    assert upserted.id == obj.id
+    assert upserted.name == "Upserted Name"
+

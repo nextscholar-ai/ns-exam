@@ -107,14 +107,17 @@ async def refresh_token(
     )
 
 
-@router.post("/auth/logout", status_code=204)
+from fastapi import Response
+
+@router.post("/auth/logout", response_class=Response, status_code=204)
 async def logout(
     payload: RefreshRequest,
     db: AsyncSession = Depends(get_db),
     _current_user: CurrentUser = Depends(get_current_user),
-) -> None:
+) -> Response:
     service = IdentityService(db)
     await service.logout(payload.refresh_token)
+    return Response(status_code=204)
 
 
 @router.get("/auth/me", response_model=UserMeResponse)
