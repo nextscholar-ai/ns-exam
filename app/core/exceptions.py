@@ -30,7 +30,10 @@ class NotFoundError(DomainError):
 
 
 class ValidationDomainError(DomainError):
-    """Raised for business-rule validation failures (distinct from Pydantic schema errors)."""
+    """Raised for business-rule validation failures (distinct from Pydantic schema errors).
+    Aliased as `ValidationError` to match Phase 7 §5.3's documented hierarchy name
+    (kept as ValidationDomainError internally to avoid shadowing Pydantic's own
+    ValidationError)."""
 
     status_code = 422
     error_code = "VALIDATION_ERROR"
@@ -51,10 +54,19 @@ class UnauthorizedError(DomainError):
 
 
 class ForbiddenError(DomainError):
-    """Raised when an authenticated actor lacks permission (RBAC failure)."""
+    """Raised when an authenticated actor lacks permission (RBAC failure).
+    This IS Phase 7 §5.3's `PermissionDeniedError` - see alias below."""
 
     status_code = 403
-    error_code = "FORBIDDEN"
+    error_code = "PERMISSION_DENIED"
+
+
+class BusinessRuleError(DomainError):
+    """Generic 400-level business-rule violation that doesn't fit NotFound/
+    Validation/Conflict/Forbidden (Phase 7 §5.3)."""
+
+    status_code = 400
+    error_code = "BUSINESS_RULE_ERROR"
 
 
 class ExternalServiceError(DomainError):
@@ -65,7 +77,13 @@ class ExternalServiceError(DomainError):
 
 
 class RateLimitedError(DomainError):
-    """Raised when a caller exceeds allowed request rate."""
+    """Raised when a caller exceeds allowed request rate (Phase 7 §5.8)."""
 
     status_code = 429
     error_code = "RATE_LIMITED"
+
+
+# Phase 7 §5.3 documents this exact class-name hierarchy - aliases so code can
+# use either name interchangeably without duplicating logic.
+ValidationError = ValidationDomainError
+PermissionDeniedError = ForbiddenError

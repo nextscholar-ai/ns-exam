@@ -25,10 +25,10 @@ class EventBus:
 
     def subscribe(self, event_name: str, handler: Handler) -> None:
         self._subscribers[event_name].append(handler)
-        logger.info("event_bus.subscribed", event=event_name, handler=handler.__qualname__)
+        logger.info("event_bus.subscribed", event_name=event_name, handler=handler.__qualname__)
 
     async def publish(self, event_name: str, payload: dict[str, Any]) -> None:
-        logger.info("event_bus.published", event=event_name, payload_keys=list(payload.keys()))
+        logger.info("event_bus.published", event_name=event_name, payload_keys=list(payload.keys()))
         for handler in self._subscribers.get(event_name, []):
             try:
                 await handler(payload)
@@ -36,7 +36,9 @@ class EventBus:
                 # A failing handler must never break the publisher's transaction;
                 # log and continue. Retry/dead-letter strategy is a Phase 17 concern.
                 logger.exception(
-                    "event_bus.handler_failed", event=event_name, handler=handler.__qualname__
+                    "event_bus.handler_failed",
+                    event_name=event_name,
+                    handler=handler.__qualname__,
                 )
 
 

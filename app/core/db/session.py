@@ -13,6 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
+# Re-exported so service.py modules can type-hint the session without
+# importing sqlalchemy directly (Phase 8 §8 / import-linter contract).
+DbSession = AsyncSession
+
 engine = create_async_engine(
     settings.db.url,
     pool_size=settings.db.pool_size,

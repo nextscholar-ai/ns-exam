@@ -17,9 +17,11 @@ from app.core.config import settings
 from app.core.db.base_model import Base
 
 # Import every module's models here so they register on Base.metadata before
-# `alembic revision --autogenerate` runs. Uncomment as each phase adds models:
-# from app.modules.identity import models as identity_models  # noqa: F401
-# from app.modules.academic import models as academic_models  # noqa: F401
+# `alembic revision --autogenerate` runs.
+from app.modules.identity import models as identity_models  # noqa: F401
+from app.modules.academic import models as academic_models  # noqa: F401
+from app.modules.student import models as student_models  # noqa: F401
+from app.modules.teacher import models as teacher_models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.db.url)
