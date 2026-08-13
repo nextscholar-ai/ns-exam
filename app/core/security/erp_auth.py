@@ -41,6 +41,10 @@ class ERPAuthClient:
 
     async def validate_token(self, erp_token: str) -> ERPValidationResult:
         """
+        Validates the ERP-issued JWT against the ERP's own `GET {validate_path}`
+        endpoint (real contract, Phase 6 §6.1 — the SCHOOL_ERP service exposes
+        `GET /auth/validate-token`).
+
         Raises UnauthorizedError on any invalid/failed validation - Phase 6
         §12 rule: "ERP validation failure never silently falls back to local
         auth — hard 401." Raises ExternalServiceError if ERP itself is
@@ -54,7 +58,7 @@ class ERPAuthClient:
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, headers=headers)
+                response = await client.get(url, headers=headers)
         except httpx.HTTPError as exc:
             logger.error("erp_auth.unreachable", error=str(exc))
             raise ExternalServiceError("ERP authentication service unreachable") from exc
@@ -71,15 +75,29 @@ class ERPAuthClient:
             logger.warning("erp_auth.invalid_payload")
             raise UnauthorizedError("ERP rejected the provided token")
 
-        logger.info("erp_auth.validated", erp_user_id=payload.get("erp_user_id"))
+        # SCHOOL_ERP response shape: {"valid", "user_id" (int), "role", "public_id"}.
+        logger.info("erp_auth.validated", erp_user_id=payload.get("user_id"))
         return ERPValidationResult(
             valid=True,
-            erp_user_id=payload["erp_user_id"],
-            user_type=payload["user_type"],
-            school_erp_id=payload.get("school_erp_id"),
-            board_erp_id=payload.get("board_erp_id"),
-            name=payload.get("name", ""),
+            erp_user_id=str(payload.get("user_id") or payload.get("public_id")),
+            user_type=self._normalize_role(payload.get("role", "")),
+            school_erp_id=None,
+            board_erp_id=None,
+            name=payload.get("public_id", ""),
         )
+
+    @staticmethod
+    def _normalize_role(role: str) -> str:
+        """Map SCHOOL_ERP's lowercase role values to the Exam Engine's
+        expected user_type vocabulary (STUDENT | TEACHER | SCHOOL_ADMIN |
+        ADMIN | ERP_STUDENT). Defaults to ERP_STUDENT - Phase 6 §6.1."""
+        return {
+            "admin": "ADMIN",
+            "teacher": "TEACHER",
+            "school_admin": "SCHOOL_ADMIN",
+            "student": "ERP_STUDENT",
+            "parent": "ERP_STUDENT",
+        }.get(role.lower(), "ERP_STUDENT")
 
 
 erp_auth_client = ERPAuthClient()
