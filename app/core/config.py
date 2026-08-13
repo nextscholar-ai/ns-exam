@@ -35,6 +35,8 @@ class ERPSettings(BaseSettings):
     base_url: str = Field("", alias="ERP_API_BASE_URL")
     api_key: str = Field("", alias="ERP_API_KEY")
     token_validate_path: str = Field("/auth/validate", alias="ERP_TOKEN_VALIDATE_PATH")
+    webhook_timeout_sec: int = Field(10, alias="ERP_WEBHOOK_TIMEOUT_SEC")
+    webhook_token: str = Field("", alias="ERP_WEBHOOK_TOKEN")
 
 
 class StorageSettings(BaseSettings):
@@ -51,12 +53,29 @@ class LoggingSettings(BaseSettings):
     format: str = Field("json", alias="LOG_FORMAT")
 
 
+class NotificationSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    smtp_host: str = Field("", alias="SMTP_HOST")
+    smtp_port: int = Field(587, alias="SMTP_PORT")
+    smtp_user: str = Field("", alias="SMTP_USER")
+    smtp_password: str = Field("", alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field("notifications@ns-exam.com", alias="SMTP_FROM_EMAIL")
+    smtp_use_tls: bool = Field(True, alias="SMTP_USE_TLS")
+    email_enabled: bool = Field(False, alias="EMAIL_NOTIFICATIONS_ENABLED")
+
+    push_enabled: bool = Field(False, alias="PUSH_NOTIFICATIONS_ENABLED")
+    push_api_key: str = Field("", alias="PUSH_API_KEY")
+    push_gateway_url: str = Field("", alias="PUSH_GATEWAY_URL")
+
+
 class Settings(BaseSettings):
     """
     Root settings object. Access nested config via:
         settings.db.url
         settings.jwt.secret
         settings.erp.base_url
+        settings.notification.email_enabled
     """
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -77,6 +96,7 @@ class Settings(BaseSettings):
     erp: ERPSettings = Field(default_factory=ERPSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    notification: NotificationSettings = Field(default_factory=NotificationSettings)
 
     @property
     def is_production(self) -> bool:

@@ -20,6 +20,7 @@ from app.modules.reports.router import router as reports_router
 from app.modules.storage.router import router as storage_router
 from app.modules.student.router import router as student_router
 from app.modules.teacher.router import router as teacher_router
+from app.core.notifications.router import router as notification_router
 
 api_v1_router = APIRouter()
 
@@ -39,3 +40,4 @@ api_v1_router.include_router(recommendation_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(storage_router)
 api_v1_router.include_router(integration_router)
+api_v1_router.include_router(notification_router)

@@ -6,6 +6,7 @@ Phase 7 adds the middleware pipeline (rate limiting, request-id, response
 envelope) and the global `/api/v1/jobs/{job_id}` contract on top.
 """
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +25,9 @@ from app.core.rate_limit import rate_limiter
 from app.jobs.router import router as jobs_router
 from app.modules.identity.events import register_identity_event_handlers
 from app.core.events.handlers import register_all_handlers
+from app.modules.integration.events import register_integration_event_handlers
+
+from app.core.security.headers import SecurityHeadersMiddleware
 
 configure_logging()
 logger = get_logger(__name__)
@@ -34,6 +38,7 @@ async def lifespan(app: FastAPI):
     logger.info("app.startup", env=settings.app_env, version=settings.app_version)
     register_identity_event_handlers()
     register_all_handlers()
+    register_integration_event_handlers()
     yield
     logger.info("app.shutdown")
     await engine.dispose()
@@ -49,10 +54,8 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if not settings.is_production else None,
     )
 
-    # Middleware pipeline (Phase 7 §4), outermost to innermost:
-    # CORS -> RateLimit -> RequestContext -> ResponseEnvelope -> router.
-    # add_middleware() makes the LAST call the OUTERMOST layer, so these are
-    # added innermost-first.
+    # Middleware pipeline (Phase 7 & Phase 21), outermost to innermost:
+    # SecurityHeaders -> CORS -> RateLimit -> RequestContext -> ResponseEnvelope -> router.
     app.add_middleware(ResponseEnvelopeMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RateLimitMiddleware, limiter=rate_limiter)
@@ -63,6 +66,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(SecurityHeadersMiddleware)
 
     register_exception_handlers(app)
 
@@ -77,6 +81,36 @@ def create_app() -> FastAPI:
     async def health_db() -> dict[str, str]:
         ok = await check_db_connection()
         return {"status": "ok" if ok else "unavailable"}
+
+    @app.get("/health/live", tags=["health"])
+    async def health_live() -> dict[str, str]:
+        """Liveness probe: verifies process responsiveness."""
+        return {"status": "ALIVE", "version": settings.app_version}
+
+    @app.get("/health/ready", tags=["health"])
+    async def health_ready() -> dict[str, Any]:
+        """Readiness probe: verifies DB connectivity and core component state."""
+        db_ok = await check_db_connection()
+        status = "READY" if db_ok else "NOT_READY"
+        notif_enabled = settings.notification.email_enabled or settings.notification.push_enabled
+        return {
+            "status": status,
+            "components": {
+                "database": "CONNECTED" if db_ok else "DISCONNECTED",
+                "notifications": "ENABLED" if notif_enabled else "DISABLED",
+            },
+        }
+
+    @app.get("/health/metrics", tags=["health"])
+    async def health_metrics() -> dict[str, Any]:
+        """Production observability metrics summary."""
+        db_ok = await check_db_connection()
+        return {
+            "app_env": settings.app_env,
+            "app_version": settings.app_version,
+            "database_connected": db_ok,
+            "rate_limiter": "active",
+        }
 
     return app
 

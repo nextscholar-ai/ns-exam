@@ -1,12 +1,10 @@
 """
-Async/long-running-operation job registry (Phase 7 §5.7).
+Async/long-running-operation job registry (Phase 7 §5.7 / Phase 18 §2).
 
 Endpoints that trigger background work (bulk paper generation, OMR batch
 processing) return `202 Accepted` with a `job_id` immediately, then the
-client polls `GET /api/v1/jobs/{job_id}`. Phase 17 owns actual job execution
-(a real job runner/queue); this module owns only the API-visible contract -
-`JobRegistry` here is an in-memory placeholder so the contract is real and
-testable before Phase 17 swaps in the real backing store.
+client polls `GET /api/v1/jobs/{job_id}`. Phase 18 adds real task execution;
+this module owns the API-visible contract and in-memory backing store.
 """
 from __future__ import annotations
 
@@ -32,6 +30,7 @@ class Job:
     status: JobStatus = JobStatus.PENDING
     result: dict[str, Any] | None = None
     error: str | None = None
+    meta: dict[str, Any] = field(default_factory=dict)  # Phase 18: arbitrary job metadata
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -41,8 +40,8 @@ class JobRegistry:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
 
-    def create(self, job_type: str) -> Job:
-        job = Job(job_id=str(uuid.uuid4()), job_type=job_type)
+    def create(self, job_type: str, meta: dict[str, Any] | None = None) -> Job:
+        job = Job(job_id=str(uuid.uuid4()), job_type=job_type, meta=meta or {})
         with self._lock:
             self._jobs[job.job_id] = job
         return job
@@ -50,6 +49,23 @@ class JobRegistry:
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def list_recent(self, limit: int = 20) -> list[Job]:
+        """Return the most recently created jobs (newest first)."""
+        with self._lock:
+            sorted_jobs = sorted(
+                self._jobs.values(),
+                key=lambda j: j.created_at,
+                reverse=True,
+            )
+        return sorted_jobs[:limit]
+
+    def list_by_type(self, job_type: str, limit: int = 20) -> list[Job]:
+        """Return recent jobs of a specific type."""
+        with self._lock:
+            filtered = [j for j in self._jobs.values() if j.job_type == job_type]
+            sorted_jobs = sorted(filtered, key=lambda j: j.created_at, reverse=True)
+        return sorted_jobs[:limit]
 
     def mark_running(self, job_id: str) -> None:
         self._update(job_id, status=JobStatus.RUNNING)

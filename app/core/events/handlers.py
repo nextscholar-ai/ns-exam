@@ -164,12 +164,21 @@ async def _on_learning_profile_updated(payload: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 async def _on_analytics_updated(payload: dict[str, Any]) -> None:
-    """Placeholder — log only until ERP sync is implemented (Phase 18)."""
+    """Phase 18: dispatch at-risk alert notification when student is flagged."""
+    student_id: int | None = payload.get("student_id")
+    is_at_risk: bool = payload.get("is_at_risk", False)
+
     logger.info(
         "handler.analytics_updated.received",
-        student_id=payload.get("student_id"),
-        is_at_risk=payload.get("is_at_risk"),
+        student_id=student_id,
+        is_at_risk=is_at_risk,
     )
+
+    if is_at_risk and student_id:
+        from app.core.notifications import notification_dispatcher
+        await notification_dispatcher.send_at_risk_alert(
+            student_id=student_id,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -177,12 +186,24 @@ async def _on_analytics_updated(payload: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 async def _on_report_generated(payload: dict[str, Any]) -> None:
-    """Placeholder — log only until notification system is implemented (Phase 18)."""
+    """Phase 18: notify student that their report is ready for download."""
+    report_public_id: str | None = payload.get("report_public_id")
+    report_type: str = payload.get("report_type", "UNKNOWN")
+    student_id: int | None = payload.get("student_id")
+
     logger.info(
         "handler.report_generated.received",
-        report_public_id=payload.get("report_public_id"),
-        report_type=payload.get("report_type"),
+        report_public_id=report_public_id,
+        report_type=report_type,
     )
+
+    if student_id and report_public_id:
+        from app.core.notifications import notification_dispatcher
+        await notification_dispatcher.send_report_ready(
+            student_id=student_id,
+            report_public_id=report_public_id,
+            report_type=report_type,
+        )
 
 
 # ---------------------------------------------------------------------------

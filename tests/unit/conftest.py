@@ -31,6 +31,8 @@ from app.modules.learning_profile import models as learning_profile_models  # no
 from app.modules.recommendation import models as recommendation_models  # noqa: F401
 from app.modules.analytics import models as analytics_models  # noqa: F401
 from app.modules.reports import models as reports_models  # noqa: F401
+from app.modules.integration import models as integration_models  # noqa: F401
+from app.core.notifications import models as notification_models  # noqa: F401
 from app.core.db.base_model import Base
 
 
