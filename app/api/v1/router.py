@@ -5,6 +5,12 @@ allowed to import from every module - it is glue, not business logic.
 """
 from fastapi import APIRouter
 
+# Register every module's ORM models on Base.metadata at startup so that
+# cross-module FKs resolve at mapper-configuration time (e.g. analytics
+# student_analytics_summaries.student_id -> student_profiles.id).
+import app.modules.academic.models  # noqa: F401
+import app.modules.student.models  # noqa: F401
+
 from app.modules.academic.router import router as academic_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.blueprint.router import router as blueprint_router

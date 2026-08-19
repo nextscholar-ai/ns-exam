@@ -142,6 +142,19 @@ class StudentAttemptRepository(BaseRepository[StudentAttempt]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, StudentAttempt)
 
+    async def list_subject_ids_by_student(self, student_id: int) -> list[int]:
+        """Distinct subject IDs the student has attempted (via their exams)."""
+        stmt = (
+            select(Exam.subject_id)
+            .join(StudentAttempt, StudentAttempt.exam_id == Exam.id)
+            .where(StudentAttempt.student_id == student_id)
+            .where(StudentAttempt.is_deleted == False)  # noqa: E712
+            .where(Exam.subject_id.isnot(None))
+            .distinct()
+        )
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.all()]
+
     async def get_latest_attempt(
         self, exam_id: int, student_id: int
     ) -> StudentAttempt | None:

@@ -21,6 +21,7 @@ from app.modules.analytics.domain.calculators import (
     compute_trend_direction,
     evaluate_student_risk,
 )
+from app.modules.analytics.events import AnalyticsUpdated, publish_analytics_updated
 from app.modules.analytics.repository import (
     ClassAnalyticsSummaryRepository,
     StudentAnalyticsSummaryRepository,
@@ -42,6 +43,11 @@ class AnalyticsService:
         self.profile_service = LearningProfileService(session)
         self.attempt_repo = StudentAttemptRepository(session)
         self.eval_repo = EvaluationRepository(session)
+
+    async def get_student_subject_ids(self, student_id: int) -> list[int]:
+        """Distinct subject IDs the student has attempted (used by the nightly
+        recompute job to refresh every subject dashboard)."""
+        return await self.attempt_repo.list_subject_ids_by_student(student_id)
 
     async def get_student_dashboard(
         self,
@@ -134,6 +140,14 @@ class AnalyticsService:
             student_id=student_id,
             subject_id=subject_id,
             is_at_risk=is_at_risk,
+        )
+
+        await publish_analytics_updated(
+            AnalyticsUpdated(
+                student_id=student_id,
+                class_id=None,
+                is_at_risk=is_at_risk,
+            )
         )
 
         return {

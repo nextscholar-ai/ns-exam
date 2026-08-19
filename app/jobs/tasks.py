@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from sqlalchemy import select
+
 from app.core.db.session import db_session_scope
 from app.core.logging import get_logger
 from app.core.notifications import notification_dispatcher
@@ -128,6 +130,7 @@ async def run_batch_report_generation(
 
     try:
         async with db_session_scope() as session:
+            from app.modules.exam_management.models import Exam, StudentAttempt
             from app.modules.exam_management.repository import StudentAttemptRepository
             from app.modules.reports.service import ReportService
 
@@ -135,13 +138,22 @@ async def run_batch_report_generation(
             report_svc = ReportService(session)
 
             # Fetch all submitted attempts for this exam
-            attempts = await attempt_repo.list_by(exam_id=exam_id, status="SUBMITTED")
+            attempts = await attempt_repo.get_many(
+                filters={"exam_id": exam_id, "status": "SUBMITTED"}
+            )
 
             for attempt in attempts:
                 try:
+                    subject_id = (
+                        await session.execute(
+                            select(Exam.subject_id).where(Exam.id == attempt.exam_id)
+                        )
+                    ).scalar_one_or_none()
+                    if subject_id is None:
+                        raise ValueError(f"No subject for exam {attempt.exam_id}")
                     await report_svc.generate_student_report_card(
                         student_id=attempt.student_id,
-                        exam_id=exam_id,
+                        subject_id=subject_id,
                     )
                     generated += 1
                 except Exception as exc:
@@ -201,8 +213,8 @@ async def run_nightly_analytics_recompute(
 
     try:
         async with db_session_scope() as session:
-            from app.modules.student.repository import StudentRepository
             from app.modules.analytics.service import AnalyticsService
+            from app.modules.student.repository import StudentRepository
 
             student_repo = StudentRepository(session)
             analytics_svc = AnalyticsService(session)
@@ -211,7 +223,11 @@ async def run_nightly_analytics_recompute(
 
             for student in students:
                 try:
-                    await analytics_svc.get_student_dashboard(student.id)
+                    subject_ids = await analytics_svc.get_student_subject_ids(student.id)
+                    if not subject_ids:
+                        continue
+                    for subject_id in subject_ids:
+                        await analytics_svc.get_student_dashboard(student.id, subject_id)
                     processed += 1
                 except Exception as exc:
                     logger.warning(

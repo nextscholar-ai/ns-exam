@@ -20,6 +20,7 @@ from app.core.logging import get_logger
 from app.core.security.rbac import CurrentUser
 from app.modules.analytics.service import AnalyticsService
 from app.modules.learning_profile.service import LearningProfileService
+from app.modules.reports.events import ReportGenerated, publish_report_generated
 from app.modules.reports.repository import ReportSnapshotRepository
 
 logger = get_logger(__name__)
@@ -89,6 +90,15 @@ class ReportService:
             student_id=student_id,
         )
 
+        await publish_report_generated(
+            ReportGenerated(
+                report_public_id=str(snapshot.public_id),
+                report_type="STUDENT_PROGRESS",
+                student_id=student_id,
+                exam_id=None,
+            )
+        )
+
         return self._report_to_dict(snapshot)
 
     async def generate_exam_analysis_report(
@@ -137,6 +147,15 @@ class ReportService:
             "reports.exam_report_generated",
             public_id=str(snapshot.public_id),
             exam_id=exam_id,
+        )
+
+        await publish_report_generated(
+            ReportGenerated(
+                report_public_id=str(snapshot.public_id),
+                report_type="EXAM_ANALYSIS",
+                student_id=None,
+                exam_id=exam_id,
+            )
         )
 
         return self._report_to_dict(snapshot)

@@ -1,8 +1,9 @@
 """
-ERP / SIS Integration module — ORM models (Phase 18 §3).
+ERP / SIS Integration module — ORM models (Phase 16 §5.6, Phase 18 §3).
 
 Tables owned here:
-  sync_logs — outbound ERP sync audit log (append-only).
+  sync_logs     — outbound ERP webhook sync audit log (append-only, Phase 18).
+  erp_sync_logs — inbound academic snapshot sync audit log (Phase 16 §5.6).
 """
 from __future__ import annotations
 
@@ -43,6 +44,39 @@ class SyncLog(BaseMixin, Base):
     synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class ErpSyncLog(BaseMixin, Base):
+    """
+    Inbound academic snapshot sync audit record (Phase 16 §5.6).
+
+    One row per sync run (per entity type). Tracks what was pulled from the
+    ERP and whether the run succeeded / partially failed. Read by the
+    `GET /integration/sync/status` and `GET /integration/sync/logs` endpoints.
+    """
+
+    __tablename__ = "erp_sync_logs"
+    __table_args__ = (
+        Index("ix_esl_sync_type", "sync_type"),
+        Index("ix_esl_entity_type", "entity_type"),
+        Index("ix_esl_status", "status"),
+    )
+
+    sync_type: Mapped[str] = mapped_column(String(20), nullable=False)  # FULL | INCREMENTAL | MANUAL
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)  # board/school/.../student
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    records_pulled: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    records_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    records_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="SUCCESS"
+    )  # SUCCESS | PARTIAL | FAILED
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 def compute_payload_hash(payload: dict[str, Any]) -> str:
