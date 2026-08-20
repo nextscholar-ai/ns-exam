@@ -7,8 +7,7 @@ Provides:
 
 Architecture contract:
   - Caller passes a pre-built payload dict; client handles auth/headers.
-  - Client is stateless — a new `httpx.AsyncClient` per call (simplest for
-    Phase 18; Phase 19 can swap to connection pooling).
+  - Phase 4: Uses shared HTTP client with connection pooling.
   - `base_url` defaults to `settings.erp.base_url`; can be overridden in tests.
 """
 from __future__ import annotations
@@ -17,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from app.core.http import get_http_client
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -36,6 +36,8 @@ class WebhookClient:
 
     Raises nothing on HTTP errors — returns a `WebhookResponse` with ok=False
     so the caller (`ERPIntegrationService`) can decide how to log/retry.
+
+    Phase 4: Uses shared HTTP client with connection pooling.
     """
 
     def __init__(
@@ -50,8 +52,6 @@ class WebhookClient:
 
     async def post(self, path: str, payload: dict[str, Any]) -> WebhookResponse:
         """POST payload to `{base_url}/{path}` with bearer token auth."""
-        import httpx
-
         url = f"{self.base_url}/{path.lstrip('/')}"
         headers = {"Content-Type": "application/json"}
         if self.token:
@@ -64,8 +64,8 @@ class WebhookClient:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
-                response = await client.post(url, json=payload, headers=headers)
+            client = get_http_client()
+            response = await client.post(url, json=payload, headers=headers)
             result = WebhookResponse(
                 status_code=response.status_code,
                 body=response.text[:500],  # cap logged body size

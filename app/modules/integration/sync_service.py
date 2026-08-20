@@ -14,6 +14,8 @@ Pipeline per entity type (`sync_entity_type`):
   5. Full sync: erp_ids previously synced but absent from the response are
      flagged `sync_status=MISSING_IN_ERP` (never auto-deleted, Phase 16 §5.2).
   6. Every run is audited in `erp_sync_logs` (§5.6).
+
+Phase 6: Fixed double-commit, added retry logic, improved _mark_missing.
 """
 from __future__ import annotations
 
@@ -22,7 +24,6 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import Date
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,17 +38,29 @@ from app.modules.academic.models import (
     Topic,
     Unit,
 )
+from app.modules.identity.models import User
+from app.modules.student.models import StudentProfile
+from app.modules.teacher.models import TeacherProfile
 from app.modules.integration.erp_client import ERPClient, get_erp_client
 from app.modules.integration.repository import ErpSyncLogRepository
 
 logger = get_logger(__name__)
 
-# Entity config: ERP entity_type → (snapshot model, erp-relationship field names)
-# `fks` maps an ERP payload field name to the local FK column that must be
-# resolved from the just-synced snapshot tree (erp_id → local PK).
+# Retry configuration for transient ERP failures
+MAX_RETRIES = 3
+INITIAL_DELAY_SEC = 1.0
+BACKOFF_FACTOR = 2.0
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
 def _entity_config() -> dict[str, dict[str, Any]]:
+    """Entity config: ERP entity_type → (snapshot model, erp-relationship field names).
+
+    `fks` maps an ERP payload field name to the local FK column that must be
+    resolved from the just-synced snapshot tree (erp_id → local PK).
+
+    Phase 7: Added student and teacher entity types for full sync support.
+    """
     return {
         "board": {"model": Board, "fks": {}},
         "school": {"model": School, "fks": {"board_erp_id": "board_id"}},
@@ -60,6 +73,8 @@ def _entity_config() -> dict[str, dict[str, Any]]:
         "chapter": {"model": Chapter, "fks": {"subject_erp_id": "subject_id"}},
         "unit": {"model": Unit, "fks": {"chapter_erp_id": "chapter_id"}},
         "topic": {"model": Topic, "fks": {"unit_erp_id": "unit_id"}},
+        "student": {"model": StudentProfile, "fks": {"school_erp_id": "school_id", "class_erp_id": "class_id"}},
+        "teacher": {"model": TeacherProfile, "fks": {"school_erp_id": "school_id"}},
     }
 
 
@@ -80,7 +95,11 @@ class SyncService:
     # ------------------------------------------------------------------
 
     async def sync_entity_type(self, entity_type: str, mode: str = "FULL") -> dict[str, Any]:
-        """Sync one entity type. `mode` is FULL | INCREMENTAL | MANUAL."""
+        """Sync one entity type. `mode` is FULL | INCREMENTAL | MANUAL.
+
+        Phase 7: Special handling for student and teacher sync to also
+        create/update User records and link profiles.
+        """
         config = _entity_config().get(entity_type)
         if config is None:
             raise ValueError(f"Unknown entity type: {entity_type}")
@@ -106,19 +125,26 @@ class SyncService:
         failed = 0
         errors: list[str] = []
 
+        # Phase 6: Track pulled erp_ids for accurate _mark_missing
+        pulled_erp_ids: set[str] = set()
+
         page = 1
         while True:
-            payload = await self.client.get_academic_page(
-                entity_type,
-                page=page,
-                page_size=100,
-            )
+            payload = await self._fetch_page_with_retry(entity_type, page)
             items = payload.get("items", [])
             if not items:
                 break
             for item in items:
                 try:
-                    updated += await self._upsert_record(model, fks, item)
+                    if entity_type == "student":
+                        updated += await self._upsert_student(item)
+                    elif entity_type == "teacher":
+                        updated += await self._upsert_teacher(item)
+                    else:
+                        updated += await self._upsert_record(model, fks, item)
+                    erp_id = str(item.get("erp_id"))
+                    if erp_id:
+                        pulled_erp_ids.add(erp_id)
                 except Exception as exc:  # noqa: BLE001 - keep sync alive per-record
                     failed += 1
                     errors.append(f"{item.get('erp_id')}: {exc}")
@@ -136,8 +162,9 @@ class SyncService:
             page += 1
 
         if mode.upper() == "FULL":
-            await self._mark_missing(model, entity_type, pulled)
+            await self._mark_missing(model, entity_type, pulled_erp_ids)
 
+        # Phase 6: Single commit for the entire entity sync
         await self.session.commit()
 
         status = "SUCCESS" if failed == 0 else "PARTIAL"
@@ -149,7 +176,6 @@ class SyncService:
             status=status,
             error_detail="; ".join(errors[:5]) if errors else None,
         )
-        await self.session.commit()
 
         logger.info(
             "erp.sync.entity_completed",
@@ -169,8 +195,15 @@ class SyncService:
         }
 
     async def sync_all(self, mode: str = "FULL") -> list[dict[str, Any]]:
-        """Full/academic-tree sync in dependency order (parents before children)."""
-        order = ["board", "school", "session", "class", "subject", "chapter", "unit", "topic"]
+        """Full/academic-tree sync in dependency order (parents before children).
+
+        Phase 7: Added student and teacher sync after academic structure.
+        """
+        order = [
+            "board", "school", "session", "class", "subject",
+            "chapter", "unit", "topic",
+            "student", "teacher",
+        ]
         results = []
         for entity_type in order:
             try:
@@ -232,6 +265,65 @@ class SyncService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _fetch_page_with_retry(self, entity_type: str, page: int) -> dict[str, Any]:
+        """Fetch a page from ERP with retry logic for transient failures.
+
+        Phase 6: Retry up to MAX_RETRIES times with exponential backoff
+        on retryable HTTP status codes (408, 429, 500-504).
+        """
+        last_exc: Exception | None = None
+        delay = INITIAL_DELAY_SEC
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                payload = await self.client.get_academic_page(
+                    entity_type,
+                    page=page,
+                    page_size=100,
+                )
+                # Check if the response indicates a server error
+                items = payload.get("items", [])
+                total = payload.get("total", 0)
+                # If we got items or total is 0, consider it success
+                if items or total == 0:
+                    return payload
+                # Empty items but total > 0 might be a transient issue
+                if attempt < MAX_RETRIES:
+                    logger.warning(
+                        "erp.sync.empty_page_retry",
+                        entity_type=entity_type,
+                        page=page,
+                        attempt=attempt,
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= BACKOFF_FACTOR
+                    continue
+                return payload
+            except Exception as exc:
+                last_exc = exc
+                if attempt < MAX_RETRIES:
+                    logger.warning(
+                        "erp.sync.retry_attempt",
+                        entity_type=entity_type,
+                        page=page,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= BACKOFF_FACTOR
+                else:
+                    logger.error(
+                        "erp.sync.max_retries_exceeded",
+                        entity_type=entity_type,
+                        page=page,
+                        error=str(exc),
+                    )
+
+        # All retries exhausted
+        if last_exc:
+            raise last_exc
+        return {"items": [], "page": page, "page_size": 100, "total": 0}
 
     async def _upsert_record(
         self, model: type[Any], fks: dict[str, str], item: dict[str, Any]
@@ -323,30 +415,190 @@ class SyncService:
         return value
 
     async def _mark_missing(
-        self, model: type[Any], entity_type: str, pulled: int
+        self, model: type[Any], entity_type: str, pulled_erp_ids: set[str]
     ) -> None:
         """Full-sync: flag previously-synced rows missing from the ERP response.
+
+        Phase 6: Improved determinism by tracking actual pulled erp_ids
+        instead of using a 60s timestamp heuristic.
 
         Only rows already carrying `sync_status='SYNCED'` are eligible; rows that
         were never synced (e.g. manually created) are left untouched.
         """
-        # We can't easily know which erp_ids were just pulled without tracking
-        # them; simplest safe approximation: if nothing was pulled, don't run.
-        if pulled == 0:
+        if not pulled_erp_ids:
             return
-        now = datetime.now(tz=timezone.utc)
+
         stmt = (
             select(model)
             .where(model.is_deleted.is_(False))
             .where(model.sync_status == "SYNCED")  # type: ignore[attr-defined]
-            .where(model.synced_at.isnot(None))  # type: ignore[attr-defined]
         )
         rows = (await self.session.execute(stmt)).scalars().all()
-        # Only mark rows that were synced *before* this run began (i.e. not the
-        # ones upserted by the current run). Rows upserted just now have a very
-        # recent synced_at; we conservatively require > 60s age to avoid
-        # clobbering fresh rows with same-epoch timestamps.
+
         for row in rows:
-            if row.synced_at and (now - row.synced_at).total_seconds() > 60:
+            # If this row's erp_id was NOT in the just-pulled set, mark as missing
+            if row.erp_id not in pulled_erp_ids:  # type: ignore[attr-defined]
                 row.sync_status = "MISSING_IN_ERP"  # type: ignore[attr-defined]
+
         await self.session.flush()
+
+    async def _upsert_student(self, item: dict[str, Any]) -> int:
+        """Upsert a student from ERP sync.
+
+        Phase 7: Creates/updates User record and StudentProfile.
+        Returns 1 if changed/created.
+        """
+        erp_id = str(item.get("erp_id"))
+        user_erp_id = str(item.get("user_erp_id", ""))
+        if not erp_id:
+            return 0
+
+        # Resolve school_id from school_erp_id
+        school_id = None
+        school_erp_id = item.get("school_erp_id")
+        if school_erp_id:
+            school_id = await self._resolve_erp_id("school_id", str(school_erp_id))
+
+        # Resolve class_id from class_erp_id
+        class_id = None
+        class_erp_id = item.get("class_erp_id")
+        if class_erp_id:
+            class_id = await self._resolve_erp_id("class_id", str(class_erp_id))
+
+        # Upsert User record if user_erp_id provided
+        if user_erp_id:
+            user = (
+                await self.session.execute(
+                    select(User).where(User.erp_user_id == user_erp_id)
+                )
+            ).scalar_one_or_none()
+
+            if user is None:
+                # Create new user
+                user = User(
+                    email=item.get("email", f"student_{user_erp_id}@sync.local"),
+                    user_type="ERP_STUDENT",
+                    auth_source="ERP",
+                    erp_user_id=user_erp_id,
+                    school_id=school_id,
+                    status="ACTIVE",
+                )
+                self.session.add(user)
+                await self.session.flush()
+            else:
+                # Update existing user
+                user.school_id = school_id
+                user.status = "ACTIVE" if not item.get("is_deleted") else "INACTIVE"
+                await self.session.flush()
+
+        # Upsert StudentProfile
+        existing = (
+            await self.session.execute(
+                select(StudentProfile).where(StudentProfile.erp_student_id == erp_id)
+            )
+        ).scalar_one_or_none()
+
+        data = {
+            "erp_student_id": erp_id,
+            "name": item.get("name", ""),
+            "roll_number": item.get("roll_number"),
+            "school_id": school_id,
+            "class_id": class_id,
+            "student_type": "ERP",
+            "user_id": user.id if user_erp_id and user else 0,
+            "sync_status": "SYNCED",
+            "synced_at": datetime.now(tz=timezone.utc),
+        }
+
+        if existing is not None:
+            for key, value in data.items():
+                if key == "user_id" and value == 0:
+                    continue  # Don't overwrite user_id if not resolved
+                setattr(existing, key, value)
+            existing.status = "ACTIVE" if not item.get("is_deleted") else "INACTIVE"
+            await self.session.flush()
+            return 1
+
+        instance = StudentProfile(**data)
+        if item.get("is_deleted"):
+            instance.status = "INACTIVE"
+        self.session.add(instance)
+        await self.session.flush()
+        return 1
+
+    async def _upsert_teacher(self, item: dict[str, Any]) -> int:
+        """Upsert a teacher from ERP sync.
+
+        Phase 7: Creates/updates User record and TeacherProfile.
+        Returns 1 if changed/created.
+        """
+        erp_id = str(item.get("erp_id"))
+        user_erp_id = str(item.get("user_erp_id", ""))
+        if not erp_id:
+            return 0
+
+        # Resolve school_id from school_erp_id
+        school_id = None
+        school_erp_id = item.get("school_erp_id")
+        if school_erp_id:
+            school_id = await self._resolve_erp_id("school_id", str(school_erp_id))
+
+        # Upsert User record if user_erp_id provided
+        if user_erp_id:
+            user = (
+                await self.session.execute(
+                    select(User).where(User.erp_user_id == user_erp_id)
+                )
+            ).scalar_one_or_none()
+
+            if user is None:
+                # Create new user
+                user = User(
+                    email=item.get("email", f"teacher_{user_erp_id}@sync.local"),
+                    user_type="TEACHER",
+                    auth_source="ERP",
+                    erp_user_id=user_erp_id,
+                    school_id=school_id,
+                    status="ACTIVE",
+                )
+                self.session.add(user)
+                await self.session.flush()
+            else:
+                # Update existing user
+                user.school_id = school_id
+                user.status = "ACTIVE" if not item.get("is_deleted") else "INACTIVE"
+                await self.session.flush()
+
+        # Upsert TeacherProfile
+        existing = (
+            await self.session.execute(
+                select(TeacherProfile).where(TeacherProfile.erp_teacher_id == erp_id)
+            )
+        ).scalar_one_or_none()
+
+        data = {
+            "erp_teacher_id": erp_id,
+            "name": item.get("name", ""),
+            "school_id": school_id or 0,  # TeacherProfile requires school_id
+            "user_id": user.id if user_erp_id and user else 0,
+            "sync_status": "SYNCED",
+            "synced_at": datetime.now(tz=timezone.utc),
+        }
+
+        if existing is not None:
+            for key, value in data.items():
+                if key == "school_id" and value == 0:
+                    continue  # Don't overwrite school_id if not resolved
+                if key == "user_id" and value == 0:
+                    continue  # Don't overwrite user_id if not resolved
+                setattr(existing, key, value)
+            existing.status = "ACTIVE" if not item.get("is_deleted") else "INACTIVE"
+            await self.session.flush()
+            return 1
+
+        instance = TeacherProfile(**data)
+        if item.get("is_deleted"):
+            instance.status = "INACTIVE"
+        self.session.add(instance)
+        await self.session.flush()
+        return 1

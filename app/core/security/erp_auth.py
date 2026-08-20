@@ -5,6 +5,8 @@ Exam Engine NEVER verifies the ERP JWT signature locally and never shares a
 signing secret with ERP (Phase 1 §13 ruling). This call happens exactly once
 per login, not per request — after that the client only holds/refreshes the
 Exam-Engine JWT.
+
+Phase 4: Uses shared HTTP client with connection pooling.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.exceptions import ExternalServiceError, UnauthorizedError
+from app.core.http import get_http_client
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,8 +60,8 @@ class ERPAuthClient:
         headers = {"Authorization": f"Bearer {erp_token}", "X-API-Key": self._api_key}
 
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url, headers=headers)
+            client = get_http_client()
+            response = await client.get(url, headers=headers)
         except httpx.HTTPError as exc:
             logger.error("erp_auth.unreachable", error=str(exc))
             raise ExternalServiceError("ERP authentication service unreachable") from exc

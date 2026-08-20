@@ -4,6 +4,7 @@ FastAPI application factory.
 Phase 5 exit criteria: boots with every module router registered.
 Phase 7 adds the middleware pipeline (rate limiting, request-id, response
 envelope) and the global `/api/v1/jobs/{job_id}` contract on top.
+Phase 4 adds shared HTTP client lifecycle management.
 """
 from contextlib import asynccontextmanager
 from typing import Any
@@ -14,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.db.session import check_db_connection, engine
+from app.core.http import close_http_client
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import (
     RateLimitMiddleware,
@@ -41,6 +43,7 @@ async def lifespan(app: FastAPI):
     register_integration_event_handlers()
     yield
     logger.info("app.shutdown")
+    await close_http_client()
     await engine.dispose()
 
 

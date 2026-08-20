@@ -10,12 +10,15 @@ Contract (Phase 16 §5.2):
       chapters|units|topics|students|teachers}?updated_since=&page=&page_size=
 Each returns `{items: [...], page, page_size, total}` where every item carries
 `erp_id`, business fields, `updated_at`, and `is_deleted`.
+
+Phase 4: Uses shared HTTP client with connection pooling for better performance.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from app.core.config import settings
+from app.core.http import get_http_client
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -63,8 +66,6 @@ class ERPClient:
         Raises nothing on HTTP errors — returns an empty page envelope so the
         caller can log the failure and keep the sync audit trail accurate.
         """
-        import httpx
-
         path = _ENTITY_PATHS.get(entity_type)
         if path is None:
             logger.error("erp.client.unknown_entity", entity_type=entity_type)
@@ -87,8 +88,8 @@ class ERPClient:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
-                response = await client.get(url, params=params, headers=headers)
+            client = get_http_client()
+            response = await client.get(url, params=params, headers=headers)
             if response.status_code >= 400:
                 logger.warning(
                     "erp.client.pull.http_error",
