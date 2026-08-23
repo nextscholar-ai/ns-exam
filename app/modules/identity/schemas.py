@@ -34,6 +34,12 @@ class LocalLoginRequest(BaseModel):
     password: str
 
 
+class ERPCredentialsLoginRequest(BaseModel):
+    """ERP login with email/phone + password (not token-based)."""
+    identifier: str  # email or phone
+    password: str
+
+
 class GuestStartRequest(BaseModel):
     name: str
     school_hint: str | None = None  # free-text, not FK-validated - guest may have no school

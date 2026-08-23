@@ -36,6 +36,7 @@ class RateLimiter:
         self.strict_capacity = strict_capacity
         self.strict_refill_per_second = strict_refill_per_second
         self._buckets: dict[str, _Bucket] = {}
+        self._max_buckets = 10_000
         self._lock = threading.Lock()
 
     def allow(self, key: str, *, strict: bool = False) -> bool:
@@ -45,6 +46,8 @@ class RateLimiter:
 
         now = time.monotonic()
         with self._lock:
+            if len(self._buckets) >= self._max_buckets and bucket_key not in self._buckets:
+                self._buckets.pop(next(iter(self._buckets)))
             bucket = self._buckets.get(bucket_key)
             if bucket is None:
                 bucket = _Bucket(tokens=capacity - 1, last_refill=now)

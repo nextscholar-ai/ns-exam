@@ -5,13 +5,14 @@ dependency ultimately trusts.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_db
 from app.core.exceptions import UnauthorizedError
 from app.core.security.rbac import CurrentUser, get_current_user
 from app.modules.identity.schemas import (
+    ERPCredentialsLoginRequest,
     GuestStartRequest,
     GuestTokenResponse,
     LocalLoginRequest,
@@ -44,6 +45,22 @@ async def erp_login(
     service = IdentityService(db)
     erp_result = await service.validate_erp_token(erp_token)
     user = await service.upsert_erp_user(erp_result)
+    tokens = await service.issue_tokens(user)
+    return TokenResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        expires_in_seconds=tokens.expires_in_seconds,
+    )
+
+
+@router.post("/auth/erp/credentials-login", response_model=TokenResponse)
+async def erp_credentials_login(
+    payload: ERPCredentialsLoginRequest, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
+    """Login with ERP email/phone + password. Validates credentials against
+    the external ERP system, then issues Exam-Engine tokens."""
+    service = IdentityService(db)
+    user = await service.login_erp_with_credentials(payload.identifier, payload.password)
     tokens = await service.issue_tokens(user)
     return TokenResponse(
         access_token=tokens.access_token,
@@ -106,8 +123,6 @@ async def refresh_token(
         expires_in_seconds=tokens.expires_in_seconds,
     )
 
-
-from fastapi import Response
 
 @router.post("/auth/logout", response_class=Response, status_code=204)
 async def logout(

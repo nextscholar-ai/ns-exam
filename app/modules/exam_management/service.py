@@ -398,6 +398,8 @@ class AttemptService:
                 current_user=current_user,
             )
             paper = await self.paper_repo.get_by(public_id=paper_dict["public_id"])
+            if paper is None:
+                raise BusinessRuleError("Generated paper not found after generation")
 
             attempt = await self.attempt_repo.create(
                 {
@@ -465,8 +467,8 @@ class AttemptService:
             "paper_id": att.paper_id,
             "attempt_number": att.attempt_number,
             "status": att.status,
-            "started_at": att.started_at.isoformat(),
+            "started_at": att.started_at.isoformat() if att.started_at else None,
             "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
             "is_latest": att.is_latest,
-            "created_at": att.created_at.isoformat(),
+            "created_at": att.created_at.isoformat() if att.created_at else None,
         }

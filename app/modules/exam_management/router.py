@@ -128,7 +128,11 @@ async def get_status_history(
 
 # --------------------------------------------------------------- Attempts --
 
-@router.post("/exams/{public_id}/attempts", response_model=StudentAttemptResponse, status_code=201)
+@router.post(
+    "/exams/{public_id}/attempts",
+    response_model=StudentAttemptResponse,
+    status_code=201,
+)
 async def start_attempt(
     public_id: UUID,
     payload: AttemptStartRequest,

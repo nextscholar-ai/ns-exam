@@ -44,21 +44,30 @@ class BaseQuestionRepository(BaseRepository):
 
 
 class ObjectiveQuestionRepository(BaseQuestionRepository):
-    ALLOWED_SORT_FIELDS = {"created_at": ObjectiveQuestion.created_at, "marks": ObjectiveQuestion.marks}
+    ALLOWED_SORT_FIELDS = {
+        "created_at": ObjectiveQuestion.created_at,
+        "marks": ObjectiveQuestion.marks,
+    }
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, ObjectiveQuestion)
 
 
 class SubjectiveQuestionRepository(BaseQuestionRepository):
-    ALLOWED_SORT_FIELDS = {"created_at": SubjectiveQuestion.created_at, "max_marks": SubjectiveQuestion.max_marks}
+    ALLOWED_SORT_FIELDS = {
+        "created_at": SubjectiveQuestion.created_at,
+        "max_marks": SubjectiveQuestion.max_marks,
+    }
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, SubjectiveQuestion)
 
 
 class FillBlankQuestionRepository(BaseQuestionRepository):
-    ALLOWED_SORT_FIELDS = {"created_at": FillBlankQuestion.created_at, "marks": FillBlankQuestion.marks}
+    ALLOWED_SORT_FIELDS = {
+        "created_at": FillBlankQuestion.created_at,
+        "marks": FillBlankQuestion.marks,
+    }
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, FillBlankQuestion)
@@ -161,7 +170,12 @@ class QuestionSearchRepository:
             obj_filters["status"] = status
 
         if keyword:
-            obj_items = await obj_repo.search(term=keyword, fields=["question_text"], limit=100, current_user=current_user)
+            obj_items = await obj_repo.search(
+                term=keyword,
+                fields=["question_text"],
+                limit=100,
+                current_user=current_user,
+            )
         else:
             obj_items = await obj_repo.get_many(filters=obj_filters, current_user=current_user)
 
@@ -194,7 +208,12 @@ class QuestionSearchRepository:
         subj_repo = SubjectiveQuestionRepository(self.session)
         subj_filters = dict(obj_filters)
         if keyword:
-            subj_items = await subj_repo.search(term=keyword, fields=["question_text"], limit=100, current_user=current_user)
+            subj_items = await subj_repo.search(
+                term=keyword,
+                fields=["question_text"],
+                limit=100,
+                current_user=current_user,
+            )
         else:
             subj_items = await subj_repo.get_many(filters=subj_filters, current_user=current_user)
 
@@ -227,7 +246,12 @@ class QuestionSearchRepository:
         fill_repo = FillBlankQuestionRepository(self.session)
         fill_filters = dict(obj_filters)
         if keyword:
-            fill_items = await fill_repo.search(term=keyword, fields=["question_text_with_blanks"], limit=100, current_user=current_user)
+            fill_items = await fill_repo.search(
+                term=keyword,
+                fields=["question_text_with_blanks"],
+                limit=100,
+                current_user=current_user,
+            )
         else:
             fill_items = await fill_repo.get_many(filters=fill_filters, current_user=current_user)
 

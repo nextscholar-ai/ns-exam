@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_db
+from app.core.security.rbac import get_current_user
 from app.modules.learning_profile.service import LearningProfileService, MasteryService
 
 router = APIRouter(prefix="/learning_profile", tags=["Learning Profile"])
@@ -25,7 +26,11 @@ async def ping() -> dict[str, str]:
     return {"status": "ok", "module": "learning_profile"}
 
 
-@router.get("/{student_id}", summary="Get full learning profile for a student")
+@router.get(
+    "/{student_id}",
+    summary="Get full learning profile for a student",
+    dependencies=[Depends(get_current_user)],
+)
 async def get_learning_profile(
     student_id: int,
     subject_id: int | None = None,
@@ -35,7 +40,11 @@ async def get_learning_profile(
     return await service.get_learning_profile(student_id, subject_id=subject_id)
 
 
-@router.get("/{student_id}/weak-topics", summary="Get weak topic IDs for a student")
+@router.get(
+    "/{student_id}/weak-topics",
+    summary="Get weak topic IDs for a student",
+    dependencies=[Depends(get_current_user)],
+)
 async def get_weak_topics(
     student_id: int,
     subject_id: int | None = None,
@@ -49,6 +58,7 @@ async def get_weak_topics(
 @router.get(
     "/{student_id}/history/{topic_id}",
     summary="Get mastery history for a student × topic",
+    dependencies=[Depends(get_current_user)],
 )
 async def get_topic_mastery_history(
     student_id: int,
@@ -63,6 +73,7 @@ async def get_topic_mastery_history(
 @router.post(
     "/{student_id}/process/{evaluation_public_id}",
     summary="Trigger mastery update from a locked evaluation",
+    dependencies=[Depends(get_current_user)],
 )
 async def process_evaluation_mastery(
     student_id: int,

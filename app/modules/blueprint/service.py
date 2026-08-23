@@ -82,9 +82,7 @@ class BlueprintService:
                 "duration_minutes": data.duration_minutes,
                 "syllabus_coverage_pct": data.syllabus_coverage_pct,
                 "status": "DRAFT",
-                "created_by": (
-                    current_user.public_id if current_user else None
-                ),
+                "created_by": None,  # CurrentUser carries public_id (UUID), not internal int id
             }
         )
 
@@ -178,9 +176,7 @@ class BlueprintService:
                 "current_topics_json": data.current_topics,
                 "exam_date": data.exam_date,
                 "publish_date": data.publish_date,
-                "created_by": (
-                    current_user.public_id if current_user else None
-                ),
+                "created_by": None,  # CurrentUser carries public_id (UUID), not internal int id
                 "status": "DRAFT",
             }
         )

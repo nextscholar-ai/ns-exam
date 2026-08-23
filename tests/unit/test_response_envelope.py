@@ -1,6 +1,13 @@
 """Phase 7 §5.2/§5.3: response envelope and error format, using TestClient
 against the already-registered /ping endpoints - no DB needed."""
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from integration.test_helpers import auth_header, super_admin_token
+
 
 def test_success_envelope_shape(client):
     response = client.get("/api/v1/identity/ping")
@@ -13,7 +20,11 @@ def test_success_envelope_shape(client):
 
 
 def test_404_error_envelope_shape(client):
-    response = client.get("/api/v1/jobs/does-not-exist")
+    token = super_admin_token()
+    response = client.get(
+        "/api/v1/jobs/does-not-exist",
+        headers=auth_header(token),
+    )
     assert response.status_code == 404
     body = response.json()
     assert body["success"] is False

@@ -63,7 +63,8 @@ class QuestionBankService:
         labels = [opt.label for opt in data.options]
         if data.correct_option not in labels:
             raise ValidationError(
-                f"correct_option '{data.correct_option}' must be present in options labels: {labels}"
+                f"correct_option '{data.correct_option}' must be present"
+                f" in options labels: {labels}"
             )
         if data.marks <= 0:
             raise ValidationError("marks must be greater than 0")
@@ -90,7 +91,7 @@ class QuestionBankService:
             )
 
         # Create record
-        group_id = int(data.board_id) * 100000 + int(data.primary_chapter_id) * 100 + 1
+        group_id = int(data.board_id) * 1_000_000_000 + int(data.primary_chapter_id) * 1_000 + 1
         obj_dict = {
             "question_group_id": group_id,
             "board_id": data.board_id,
@@ -146,7 +147,7 @@ class QuestionBankService:
         if data.max_marks <= 0:
             raise ValidationError("max_marks must be greater than 0")
 
-        group_id = int(data.board_id) * 100000 + int(data.primary_chapter_id) * 100 + 2
+        group_id = int(data.board_id) * 1_000_000_000 + int(data.primary_chapter_id) * 1_000 + 2
         subj_dict = {
             "question_group_id": group_id,
             "board_id": data.board_id,
@@ -199,7 +200,7 @@ class QuestionBankService:
         if data.marks <= 0:
             raise ValidationError("marks must be greater than 0")
 
-        group_id = int(data.board_id) * 100000 + int(data.primary_chapter_id) * 100 + 3
+        group_id = int(data.board_id) * 1_000_000_000 + int(data.primary_chapter_id) * 1_000 + 3
         fill_dict = {
             "question_group_id": group_id,
             "board_id": data.board_id,
@@ -413,7 +414,10 @@ class QuestionBankService:
             raise NotFoundError("Question not found")
 
         if question.status == "NEEDS_REVIEW" and new_status == "ACTIVE":
-            raise BusinessRuleError("Cannot transition from NEEDS_REVIEW directly to ACTIVE without review confirmation")
+            raise BusinessRuleError(
+                "Cannot transition from NEEDS_REVIEW directly to ACTIVE"
+                " without review confirmation"
+            )
 
         await repo.update(question.id, {"status": new_status})
         updated = await repo.get_by_id(question.id)

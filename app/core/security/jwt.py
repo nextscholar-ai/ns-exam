@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import JWTError, jwt
+from jose import JWTError, JOSEError, jwt
 
 from app.core.config import settings
 from app.core.exceptions import UnauthorizedError
@@ -70,7 +70,7 @@ def create_access_token(
 def decode_access_token(token: str) -> dict[str, Any]:
     try:
         claims = jwt.decode(token, settings.jwt.secret, algorithms=[settings.jwt.algorithm])
-    except JWTError as exc:
+    except (JWTError, JOSEError) as exc:
         raise UnauthorizedError("Invalid or expired token") from exc
 
     if claims.get("type") != ACCESS_TOKEN_TYPE:

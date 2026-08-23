@@ -66,7 +66,12 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
 
     async def _override_get_db():
         async with session_factory() as session:
-            yield session
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = _override_get_db
     transport = ASGITransport(app=app)

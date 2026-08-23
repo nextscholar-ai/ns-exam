@@ -28,7 +28,8 @@ class RecommendationStrategy(Protocol):
         Rank candidate topics by recommendation priority score (descending).
 
         Each candidate dict must contain:
-          {"topic_id": int, "chapter_id": int, "subject_id": int, "mastery_score": float, "attempt_count": int}
+          {"topic_id": int, "chapter_id": int, "subject_id": int,
+           "mastery_score": float, "attempt_count": int}
         """
         ...
 
@@ -59,7 +60,10 @@ class WeaknessPriorityStrategy:
             attempts = int(cand.get("attempt_count", 0))
             topic_id = int(cand.get("topic_id", 0))
 
-            base_score = (1.0 - mastery) * self.weakness_weight + (1.0 / (attempts + 1)) * self.attempt_weight
+            base_score = (
+                (1.0 - mastery) * self.weakness_weight
+                + (1.0 / (attempts + 1)) * self.attempt_weight
+            )
             if topic_id in weak_topic_ids:
                 base_score += self.weak_topic_boost
 

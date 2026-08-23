@@ -91,10 +91,10 @@ class EvaluationService:
         if not details:
             raise BusinessRuleError("Cannot complete evaluation with no evaluated details")
 
-        obj_marks = sum(float(d.marks_obtained) for d in details if d.evaluated_by == "OMR")
-        subj_marks = sum(float(d.marks_obtained) for d in details if d.evaluated_by == "TEACHER")
+        obj_marks = sum(float(d.marks_obtained or 0) for d in details if d.evaluated_by == "OMR")
+        subj_marks = sum(float(d.marks_obtained or 0) for d in details if d.evaluated_by == "TEACHER")
         total = obj_marks + subj_marks
-        max_possible = sum(float(d.max_marks) for d in details)
+        max_possible = sum(float(d.max_marks or 0) for d in details)
 
         pct = round((total / max_possible * 100.0), 2) if max_possible > 0 else 0.0
         res_status = "PASS" if pct >= pass_threshold_pct else "FAIL"
@@ -212,8 +212,8 @@ class EvaluationService:
             "details": [
                 {
                     "question_id": d.question_id,
-                    "marks_obtained": float(d.marks_obtained),
-                    "max_marks": float(d.max_marks),
+                    "marks_obtained": float(d.marks_obtained or 0),
+                    "max_marks": float(d.max_marks or 0),
                 }
                 for d in details
             ],

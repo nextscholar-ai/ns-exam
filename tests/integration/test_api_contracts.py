@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from .test_helpers import auth_header, super_admin_token
+
 
 @pytest.mark.asyncio
 async def test_health_endpoint_response_format(async_client):
@@ -46,7 +48,11 @@ async def test_api_v1_envelope_success_format(async_client):
 @pytest.mark.asyncio
 async def test_api_v1_envelope_error_format_404(async_client):
     """Domain NotFoundError under /api/v1/ returns standard error envelope."""
-    response = await async_client.get("/api/v1/jobs/nonexistent-job-id-999")
+    token = super_admin_token()
+    response = await async_client.get(
+        "/api/v1/jobs/nonexistent-job-id-999",
+        headers=auth_header(token),
+    )
     assert response.status_code == 404
     json_data = response.json()
 
@@ -60,7 +66,11 @@ async def test_api_v1_envelope_error_format_404(async_client):
 @pytest.mark.asyncio
 async def test_jobs_list_response_envelope(async_client):
     """GET /api/v1/jobs/ returns list response inside standard envelope."""
-    response = await async_client.get("/api/v1/jobs/")
+    token = super_admin_token()
+    response = await async_client.get(
+        "/api/v1/jobs/",
+        headers=auth_header(token),
+    )
     assert response.status_code == 200
     json_data = response.json()
 

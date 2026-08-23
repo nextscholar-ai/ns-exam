@@ -73,7 +73,10 @@ def _entity_config() -> dict[str, dict[str, Any]]:
         "chapter": {"model": Chapter, "fks": {"subject_erp_id": "subject_id"}},
         "unit": {"model": Unit, "fks": {"chapter_erp_id": "chapter_id"}},
         "topic": {"model": Topic, "fks": {"unit_erp_id": "unit_id"}},
-        "student": {"model": StudentProfile, "fks": {"school_erp_id": "school_id", "class_erp_id": "class_id"}},
+        "student": {
+            "model": StudentProfile,
+            "fks": {"school_erp_id": "school_id", "class_erp_id": "class_id"},
+        },
         "teacher": {"model": TeacherProfile, "fks": {"school_erp_id": "school_id"}},
     }
 
@@ -115,7 +118,12 @@ class SyncService:
                 status="FAILED",
                 error_detail="ERP_API_BASE_URL not configured",
             )
-            return {"entity_type": entity_type, "status": "SKIPPED_NO_ERP", "pulled": 0, "updated": 0}
+            return {
+                "entity_type": entity_type,
+                "status": "SKIPPED_NO_ERP",
+                "pulled": 0,
+                "updated": 0,
+            }
 
         model = config["model"]
         fks = config["fks"]

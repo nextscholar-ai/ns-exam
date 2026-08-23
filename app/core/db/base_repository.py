@@ -208,10 +208,11 @@ class BaseRepository(Generic[ModelT]):
         from sqlalchemy import or_
 
         conditions = []
+        escaped_term = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         for field_name in fields:
             column = getattr(self.model, field_name, None)
             if column is not None:
-                conditions.append(column.ilike(f"%{term}%"))
+                conditions.append(column.ilike(f"%{escaped_term}%", escape="\\"))
 
         stmt = select(self.model)
         stmt = self._apply_soft_delete_filter(stmt, include_deleted)
@@ -293,12 +294,12 @@ class BaseRepository(Generic[ModelT]):
                 count += 1
         return count
 
-    async def bulk_delete(self, ids: list[int], soft_delete: bool = True) -> int:
+    async def bulk_delete(self, ids: list[int], soft_delete: bool = True, deleted_by: int | None = None) -> int:
         """Bulk delete multiple records by ID."""
         count = 0
         for item_id in ids:
             if soft_delete:
-                await self.soft_delete(item_id, deleted_by=0)
+                await self.soft_delete(item_id, deleted_by=deleted_by or 0)
             else:
                 await self.hard_delete(item_id)
             count += 1
@@ -342,6 +343,8 @@ class BaseRepository(Generic[ModelT]):
     # ------------------------------------------------------------- hooks ---
     def _apply_soft_delete_filter(self, stmt: Select, include_deleted: bool) -> Select:
         if include_deleted:
+            return stmt
+        if not hasattr(self.model, "is_deleted"):
             return stmt
         return stmt.where(self.model.is_deleted.is_(False))
 

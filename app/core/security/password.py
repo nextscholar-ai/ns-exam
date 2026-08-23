@@ -8,8 +8,15 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(plain_password: str) -> str:
+    if not plain_password:
+        raise ValueError("Password must not be empty")
     return _pwd_context.hash(plain_password)
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    return _pwd_context.verify(plain_password, password_hash)
+    if not password_hash:
+        return False
+    try:
+        return _pwd_context.verify(plain_password, password_hash)
+    except (ValueError, TypeError):
+        return False

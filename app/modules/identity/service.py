@@ -7,7 +7,9 @@ from __future__ import annotations
 import secrets
 import string
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
+
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.db.base_model import utcnow
@@ -68,20 +70,25 @@ class IdentityService:
 
     async def upsert_erp_user(self, erp_result: ERPValidationResult) -> User:
         """Find-or-create the `users` row for an ERP-authenticated user
-        (Phase 6 §6.1). School/board id resolution against snapshot tables is
-        a light lookup owned by the Academic module - kept as a TODO hook here
-        so this module doesn't reach into Academic's internals directly."""
+        (Phase 6 §6.1)."""
         user = await self.users.get_by_erp_user_id(erp_result.erp_user_id)
         if user is None:
             user = User(
-                email=f"{erp_result.erp_user_id}@erp.local",  # ERP users may have no email on file
+                email=f"{erp_result.erp_user_id}@erp.local",
                 user_type=self._map_erp_user_type(erp_result.user_type),
                 auth_source="ERP",
                 erp_user_id=erp_result.erp_user_id,
                 status="ACTIVE",
             )
             self.users.add(user)
-            await self.users.flush()
+            try:
+                await self.users.flush()
+            except IntegrityError:
+                await self.session.rollback()
+                user = await self.users.get_by_erp_user_id(erp_result.erp_user_id)
+                if user is None:
+                    raise
+                return user
             role_name = {"ERP_STUDENT": "STUDENT"}.get(user.user_type, user.user_type)
             role = await self.roles.get_by_name(role_name)
             if role is not None:
@@ -102,6 +109,44 @@ class IdentityService:
         return mapping.get(erp_user_type, "ERP_STUDENT")
 
     # ------------------------------------------------------------- Local ---
+    async def login_erp_with_credentials(
+        self, identifier: str, password: str
+    ) -> User:
+        """Login with ERP email/phone + password."""
+        erp_result = await erp_auth_client.login_with_credentials(identifier, password)
+        user = await self.users.get_by_erp_user_id(erp_result.erp_user_id)
+        if user is None:
+            user = User(
+                email=erp_result.email or f"{erp_result.erp_user_id}@erp.local",
+                phone=erp_result.phone,
+                user_type=self._map_erp_user_type(erp_result.user_type),
+                auth_source="ERP",
+                erp_user_id=erp_result.erp_user_id,
+                status="ACTIVE",
+            )
+            self.users.add(user)
+            try:
+                await self.users.flush()
+            except IntegrityError:
+                await self.session.rollback()
+                user = await self.users.get_by_erp_user_id(erp_result.erp_user_id)
+                if user is None:
+                    raise
+            else:
+                role_name = {"ERP_STUDENT": "STUDENT"}.get(user.user_type, user.user_type)
+                role = await self.roles.get_by_name(role_name)
+                if role is not None:
+                    self.session.add(UserRole(user_id=user.id, role_id=role.id))
+                    await self.users.flush()
+                await event_bus.publish(USER_REGISTERED, {"user_id": user.id, "source": "ERP"})
+                logger.info("identity.erp_user_created_via_credentials", erp_user_id=erp_result.erp_user_id)
+        else:
+            if user.status != "ACTIVE":
+                raise UnauthorizedError("Account is not active")
+        self.login_history.record(user_id=user.id, source="ERP", success=True)
+        await self.users.record_login(user.id)
+        return user
+
     async def register_external_student(self, payload: LocalRegisterRequest) -> User:
         existing = await self.users.get_by_email(payload.email)
         if existing is not None:
@@ -116,7 +161,14 @@ class IdentityService:
             status="ACTIVE",
         )
         self.users.add(user)
-        await self.users.flush()
+        try:
+            await self.users.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.users.get_by_email(payload.email)
+            if existing is not None:
+                raise ConflictError("An account with this email already exists")
+            raise
         student_role = await self.roles.get_default_student_role()
         if student_role is not None:
             self.session.add(UserRole(user_id=user.id, role_id=student_role.id))

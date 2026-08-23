@@ -128,7 +128,7 @@ class MasteryService:
             subject_id = chapter_obj.subject_id
 
             q_score = compute_question_score(
-                float(detail.marks_obtained), float(detail.max_marks)
+                float(detail.marks_obtained or 0), float(detail.max_marks or 0)
             )
 
             # Get or create mastery row
@@ -299,10 +299,10 @@ class LearningProfileService:
             subject_rows = [r for r in subject_rows if r.subject_id == subject_id]
 
         weak_topic_ids = [
-            r.topic_id for r in topic_rows if float(r.mastery_score) < WEAK_THRESHOLD
+            r.topic_id for r in topic_rows if float(r.mastery_score or 0) < WEAK_THRESHOLD
         ]
         strong_topic_ids = [
-            r.topic_id for r in topic_rows if float(r.mastery_score) >= STRONG_THRESHOLD
+            r.topic_id for r in topic_rows if float(r.mastery_score or 0) >= STRONG_THRESHOLD
         ]
 
         return {
@@ -334,11 +334,11 @@ class LearningProfileService:
             {
                 "topic_id": r.topic_id,
                 "evaluation_id": r.evaluation_id,
-                "question_score": float(r.question_score),
-                "mastery_before": float(r.mastery_before),
-                "mastery_after": float(r.mastery_after),
-                "alpha_used": float(r.alpha_used),
-                "evaluated_at": r.evaluated_at.isoformat(),
+                "question_score": float(r.question_score or 0),
+                "mastery_before": float(r.mastery_before or 0),
+                "mastery_after": float(r.mastery_after or 0),
+                "alpha_used": float(r.alpha_used or 0),
+                "evaluated_at": r.evaluated_at.isoformat() if r.evaluated_at else None,
             }
             for r in rows
         ]
@@ -349,7 +349,7 @@ class LearningProfileService:
             "topic_id": r.topic_id,
             "chapter_id": r.chapter_id,
             "subject_id": r.subject_id,
-            "mastery_score": float(r.mastery_score),
+            "mastery_score": float(r.mastery_score or 0),
             "attempt_count": r.attempt_count,
             "correct_count": r.correct_count,
             "last_evaluated_at": r.last_evaluated_at.isoformat() if r.last_evaluated_at else None,
@@ -360,7 +360,7 @@ class LearningProfileService:
         return {
             "chapter_id": r.chapter_id,
             "subject_id": r.subject_id,
-            "mastery_score": float(r.mastery_score),
+            "mastery_score": float(r.mastery_score or 0),
             "topic_count": r.topic_count,
             "last_updated_at": r.last_updated_at.isoformat() if r.last_updated_at else None,
         }
@@ -369,7 +369,7 @@ class LearningProfileService:
     def _subject_to_dict(r: Any) -> dict[str, Any]:
         return {
             "subject_id": r.subject_id,
-            "mastery_score": float(r.mastery_score),
+            "mastery_score": float(r.mastery_score or 0),
             "chapter_count": r.chapter_count,
             "last_updated_at": r.last_updated_at.isoformat() if r.last_updated_at else None,
         }

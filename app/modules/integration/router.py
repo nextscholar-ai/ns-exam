@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_db
+from app.core.security.rbac import require_role
 from app.modules.integration.schemas import (
     InboundSyncLogEntry,
     InboundSyncResult,
@@ -27,7 +28,11 @@ from app.modules.integration.schemas import (
 from app.modules.integration.service import ERPIntegrationService
 from app.modules.integration.sync_service import SyncService
 
-router = APIRouter(prefix="/integration", tags=["integration"])
+router = APIRouter(
+    prefix="/integration",
+    tags=["integration"],
+    dependencies=[Depends(require_role("SUPER_ADMIN", "ADMIN", "SCHOOL_ADMIN"))],
+)
 
 
 @router.get("/ping")

@@ -56,7 +56,9 @@ class ReportService:
             f"Progress Report for Student #{student_id}:\n"
             f"Overall Mastery: {dash['overall_mastery'] * 100:.1f}%\n"
             f"Average Score: {dash['average_percentage']:.1f}%\n"
-            f"Exams Taken: {dash['total_exams_taken']} (Passed: {dash['passed_exams_count']}, Failed: {dash['failed_exams_count']})\n"
+            f"Exams Taken: {dash['total_exams_taken']}"
+            f" (Passed: {dash['passed_exams_count']},"
+            f" Failed: {dash['failed_exams_count']})\n"
             f"Performance Trend: {dash['trend_direction']}\n"
             f"At Risk Status: {'YES' if dash['is_at_risk'] else 'NO'}\n"
             f"Weak Topics Count: {len(profile['weak_topic_ids'])}\n"
@@ -123,7 +125,8 @@ class ReportService:
             f"Appeared Students: {class_analytics['appeared_students_count']}\n"
             f"Pass Rate: {class_analytics['pass_percentage']}%\n"
             f"Class Average: {class_analytics['class_average_score']}\n"
-            f"Highest Score: {class_analytics['highest_score']} / Lowest: {class_analytics['lowest_score']}\n"
+            f"Highest Score: {class_analytics['highest_score']}"
+            f" / Lowest: {class_analytics['lowest_score']}\n"
         )
 
         generated_by = current_user.public_id if current_user else "SYSTEM"

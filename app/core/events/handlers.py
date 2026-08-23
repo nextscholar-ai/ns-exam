@@ -44,10 +44,12 @@ async def _on_exam_submitted(payload: dict[str, Any]) -> None:
 
     Payload keys: attempt_public_id, exam_id, student_id, paper_id, submitted_at
     """
-    attempt_public_id: str = payload["attempt_public_id"]
-    exam_id: int = payload["exam_id"]
-    student_id: int = payload["student_id"]
-    paper_id: int = payload["paper_id"]
+    attempt_public_id: str = payload.get("attempt_public_id", "")
+    student_id: int | None = payload.get("student_id")
+
+    if not attempt_public_id:
+        logger.warning("handler.exam_submitted.missing_attempt_public_id")
+        return
 
     # We need to resolve attempt_id from public_id to call the evaluation service
     async with db_session_scope() as session:
@@ -83,17 +85,21 @@ async def _on_evaluation_completed(payload: dict[str, Any]) -> None:
 
     Payload keys: evaluation_public_id, student_id, attempt_id
     """
-    evaluation_public_id: str = payload["evaluation_public_id"]
+    evaluation_public_id: str = payload.get("evaluation_public_id", "")
+    if not evaluation_public_id:
+        logger.warning("handler.evaluation_completed.missing_evaluation_public_id")
+        return
 
     async with db_session_scope() as session:
         from app.modules.learning_profile.service import MasteryService
         svc = MasteryService(session)
         summary = await svc.process_evaluation(evaluation_public_id)
-        logger.info(
-            "handler.evaluation_completed.mastery_updated",
-            evaluation_public_id=evaluation_public_id,
-            topics_updated=summary.get("topics_updated", 0),
-        )
+        if summary:
+            logger.info(
+                "handler.evaluation_completed.mastery_updated",
+                evaluation_public_id=evaluation_public_id,
+                topics_updated=summary.get("topics_updated", 0),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +135,7 @@ async def _on_mastery_updated(payload: dict[str, Any]) -> None:
             "handler.mastery_updated.recommendation_refreshed",
             student_id=student_id,
             subject_id=subject_id,
-            recommendation_public_id=result.get("public_id"),
+            recommendation_public_id=result.get("public_id") if result else None,
         )
 
 
@@ -166,7 +172,7 @@ async def _on_learning_profile_updated(payload: dict[str, Any]) -> None:
 async def _on_analytics_updated(payload: dict[str, Any]) -> None:
     """Phase 18: dispatch at-risk alert notification when student is flagged."""
     student_id: int | None = payload.get("student_id")
-    is_at_risk: bool = payload.get("is_at_risk", False)
+    is_at_risk: bool = bool(payload.get("is_at_risk", False))
 
     logger.info(
         "handler.analytics_updated.received",
@@ -188,7 +194,7 @@ async def _on_analytics_updated(payload: dict[str, Any]) -> None:
 async def _on_report_generated(payload: dict[str, Any]) -> None:
     """Phase 18: notify student that their report is ready for download."""
     report_public_id: str | None = payload.get("report_public_id")
-    report_type: str = payload.get("report_type", "UNKNOWN")
+    report_type: str = str(payload.get("report_type", "UNKNOWN"))
     student_id: int | None = payload.get("student_id")
 
     logger.info(

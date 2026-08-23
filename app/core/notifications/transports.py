@@ -136,7 +136,7 @@ class EmailTransport(BaseTransport):
 
         except Exception as exc:
             logger.error("transport.email.failed", recipient=recipient, error=str(exc))
-            return TransportResult(status="FAILED", channel="EMAIL", error_message=str(exc))
+            return TransportResult(status="FAILED", channel="EMAIL", error_message="Email delivery failed")
 
 
 class PushNotificationTransport(BaseTransport):

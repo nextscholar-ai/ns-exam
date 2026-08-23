@@ -35,13 +35,16 @@ class NotificationDispatcher:
         self._push_transport = push_transport
 
     def _get_transport(self, channel: str) -> BaseTransport:
-        if channel.upper() == "EMAIL" and self._email_transport:
+        if not channel:
+            channel = "EMAIL"
+        channel = channel.upper()
+        if channel == "EMAIL" and self._email_transport:
             return self._email_transport
-        if channel.upper() == "PUSH" and self._push_transport:
+        if channel == "PUSH" and self._push_transport:
             return self._push_transport
-        if channel.upper() == "EMAIL":
+        if channel == "EMAIL":
             return get_email_transport()
-        if channel.upper() == "PUSH":
+        if channel == "PUSH":
             return get_push_transport()
         from app.core.notifications.transports import MockTransport
         return MockTransport()
@@ -200,11 +203,11 @@ class NotificationDispatcher:
         channel: str = "EMAIL",
         session: AsyncSession | None = None,
     ) -> None:
-        recipient = str(teacher_id) if teacher_id else str(student_id)
+        recipient = str(teacher_id) if teacher_id is not None else str(student_id)
         await self.send_notification(
             notification_type="STUDENT_AT_RISK",
             recipient_id=recipient,
-            recipient_type="TEACHER" if teacher_id else "STUDENT",
+            recipient_type="TEACHER" if teacher_id is not None else "STUDENT",
             channel=channel,
             context={
                 "student_id": student_id,
@@ -222,11 +225,11 @@ class NotificationDispatcher:
         channel: str = "EMAIL",
         session: AsyncSession | None = None,
     ) -> None:
-        recipient = str(initiated_by) if initiated_by else "system"
+        recipient = str(initiated_by) if initiated_by is not None else "system"
         await self.send_notification(
             notification_type="JOB_COMPLETED",
             recipient_id=recipient,
-            recipient_type="USER" if initiated_by else "SYSTEM",
+            recipient_type="USER" if initiated_by is not None else "SYSTEM",
             channel=channel,
             context={
                 "job_id": job_id,

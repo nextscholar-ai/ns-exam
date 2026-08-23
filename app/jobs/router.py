@@ -14,7 +14,7 @@ for admin/teacher operations.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.exceptions import NotFoundError
 from app.core.security.rbac import require_role
@@ -27,7 +27,11 @@ from app.jobs.schemas import (
     NightlyAnalyticsRequest,
 )
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(
+    prefix="/jobs",
+    tags=["jobs"],
+    dependencies=[Depends(require_role("SUPER_ADMIN", "ADMIN", "SCHOOL_ADMIN", "TEACHER"))],
+)
 
 
 def _job_to_response(job) -> JobStatusResponse:
@@ -48,7 +52,7 @@ def _job_to_response(job) -> JobStatusResponse:
     response_model=list[JobStatusResponse],
     summary="List recent background jobs",
 )
-async def list_jobs(limit: int = 20) -> list[JobStatusResponse]:
+async def list_jobs(limit: int = Query(default=20, ge=1, le=100)) -> list[JobStatusResponse]:
     """Return the `limit` most recently created background jobs (newest first)."""
     jobs = job_registry.list_recent(limit=limit)
     return [_job_to_response(j) for j in jobs]

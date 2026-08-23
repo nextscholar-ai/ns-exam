@@ -56,9 +56,9 @@ async def seed() -> None:
                 await session.execute(
                     sa_select(Role).where(Role.name == role_name, Role.is_deleted.is_(False))
                 )
-            ).first()
+            ).scalar_one_or_none()
             if existing:
-                role_objs[role_name] = await session.get(Role, existing.id)
+                role_objs[role_name] = existing
             else:
                 role = Role(name=role_name, description=f"{role_name} role")
                 session.add(role)
@@ -76,7 +76,7 @@ async def seed() -> None:
                 await session.execute(
                     sa_select(User).where(User.email == acc["email"], User.is_deleted.is_(False))
                 )
-            ).first()
+            ).scalar_one_or_none()
             if existing:
                 skipped.append(acc["email"])
                 continue

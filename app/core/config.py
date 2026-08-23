@@ -35,6 +35,7 @@ class ERPSettings(BaseSettings):
     base_url: str = Field("", alias="ERP_API_BASE_URL")
     api_key: str = Field("", alias="ERP_API_KEY")
     token_validate_path: str = Field("/auth/validate", alias="ERP_TOKEN_VALIDATE_PATH")
+    login_path: str = Field("/auth/login", alias="ERP_LOGIN_PATH")
     webhook_timeout_sec: int = Field(10, alias="ERP_WEBHOOK_TIMEOUT_SEC")
     webhook_token: str = Field("", alias="ERP_WEBHOOK_TOKEN")
 

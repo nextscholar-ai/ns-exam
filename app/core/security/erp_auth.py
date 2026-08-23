@@ -34,6 +34,20 @@ class ERPValidationResult:
     name: str
 
 
+@dataclass(frozen=True)
+class ERPCredentialResult:
+    """Response shape for credential-based ERP login."""
+
+    valid: bool
+    erp_user_id: str
+    user_type: str
+    school_erp_id: str | None
+    board_erp_id: str | None
+    name: str
+    email: str | None
+    phone: str | None
+
+
 class ERPAuthClient:
     """Validates an ERP-issued token against the ERP's own auth service."""
 
@@ -41,6 +55,7 @@ class ERPAuthClient:
         self._base_url = settings.erp.base_url
         self._api_key = settings.erp.api_key
         self._validate_path = settings.erp.token_validate_path
+        self._login_path = settings.erp.login_path
 
     async def validate_token(self, erp_token: str) -> ERPValidationResult:
         """
@@ -73,27 +88,92 @@ class ERPAuthClient:
             logger.error("erp_auth.error_status", status_code=response.status_code)
             raise ExternalServiceError(f"ERP auth returned status {response.status_code}")
 
-        payload = response.json()
+        try:
+            payload = response.json()
+        except (ValueError, Exception) as exc:
+            logger.error("erp_auth.invalid_json", error=str(exc))
+            raise ExternalServiceError("ERP returned invalid response") from exc
         if not payload.get("valid"):
             logger.warning("erp_auth.invalid_payload")
             raise UnauthorizedError("ERP rejected the provided token")
 
         # SCHOOL_ERP response shape: {"valid", "user_id" (int), "role", "public_id"}.
-        logger.info("erp_auth.validated", erp_user_id=payload.get("user_id"))
+        erp_user_id = payload.get("user_id") or payload.get("public_id")
+        if erp_user_id is None:
+            logger.error("erp_auth.missing_user_id")
+            raise UnauthorizedError("ERP response missing user identifier")
+        logger.info("erp_auth.validated", erp_user_id=erp_user_id)
         return ERPValidationResult(
             valid=True,
-            erp_user_id=str(payload.get("user_id") or payload.get("public_id")),
+            erp_user_id=str(erp_user_id),
             user_type=self._normalize_role(payload.get("role", "")),
             school_erp_id=None,
             board_erp_id=None,
             name=payload.get("public_id", ""),
         )
 
+    async def login_with_credentials(
+        self, identifier: str, password: str
+    ) -> ERPCredentialResult:
+        """
+        Validates email/phone + password against the ERP's `POST {login_path}`
+        endpoint. The ERP returns user details on success.
+
+        Raises UnauthorizedError on invalid credentials.
+        Raises ExternalServiceError if ERP is unreachable.
+        """
+        if not self._base_url:
+            raise ExternalServiceError("ERP base URL is not configured")
+
+        url = f"{self._base_url}{self._login_path}"
+        headers = {"X-API-Key": self._api_key}
+        body = {"identifier": identifier, "password": password}
+
+        try:
+            client = get_http_client()
+            response = await client.post(url, json=body, headers=headers)
+        except httpx.HTTPError as exc:
+            logger.error("erp_auth.login_unreachable", error=str(exc))
+            raise ExternalServiceError("ERP authentication service unreachable") from exc
+
+        if response.status_code == 401:
+            logger.warning("erp_auth.login_rejected", identifier=identifier)
+            raise UnauthorizedError("Invalid ERP credentials")
+        if response.status_code >= 400:
+            logger.error("erp_auth.login_error_status", status_code=response.status_code)
+            raise ExternalServiceError(f"ERP auth returned status {response.status_code}")
+
+        try:
+            payload = response.json()
+        except (ValueError, Exception) as exc:
+            logger.error("erp_auth.login_invalid_json", error=str(exc))
+            raise ExternalServiceError("ERP returned invalid response") from exc
+        if not payload.get("valid"):
+            logger.warning("erp_auth.login_invalid_payload", identifier=identifier)
+            raise UnauthorizedError("Invalid ERP credentials")
+
+        erp_user_id = payload.get("user_id") or payload.get("public_id")
+        if erp_user_id is None:
+            logger.error("erp_auth.login_missing_user_id", identifier=identifier)
+            raise UnauthorizedError("ERP response missing user identifier")
+        logger.info("erp_auth.login_validated", erp_user_id=erp_user_id)
+        return ERPCredentialResult(
+            valid=True,
+            erp_user_id=str(erp_user_id),
+            user_type=self._normalize_role(payload.get("role", "")),
+            school_erp_id=payload.get("school_erp_id"),
+            board_erp_id=payload.get("board_erp_id"),
+            name=payload.get("name", ""),
+            email=payload.get("email"),
+            phone=payload.get("phone"),
+        )
+
     @staticmethod
-    def _normalize_role(role: str) -> str:
+    def _normalize_role(role: str | None) -> str:
         """Map SCHOOL_ERP's lowercase role values to the Exam Engine's
-        expected user_type vocabulary (STUDENT | TEACHER | SCHOOL_ADMIN |
-        ADMIN | ERP_STUDENT). Defaults to ERP_STUDENT - Phase 6 §6.1."""
+        expected user_type vocabulary. Defaults to ERP_STUDENT."""
+        if not role:
+            return "ERP_STUDENT"
         return {
             "admin": "ADMIN",
             "teacher": "TEACHER",

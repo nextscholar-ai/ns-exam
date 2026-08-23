@@ -92,13 +92,20 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
         if "application/json" not in content_type:
             return response
 
-        body = b""
-        async for chunk in response.body_iterator:  # type: ignore[attr-defined]
-            body += chunk
+        try:
+            body = b""
+            async for chunk in response.body_iterator:  # type: ignore[attr-defined]
+                body += chunk
+        except Exception:
+            return Response(
+                content=b'{"success":false,"error":{"code":"INTERNAL_SERVER_ERROR","message":"Failed to read upstream response"}}',
+                status_code=500,
+                media_type="application/json",
+            )
 
         try:
             original = json.loads(body) if body else None
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             return Response(
                 content=body,
                 status_code=response.status_code,
@@ -106,14 +113,19 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
                 media_type=response.media_type,
             )
 
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request_id = getattr(getattr(request, "state", None), "request_id", None) or str(uuid.uuid4())
 
         if (
             isinstance(original, dict)
             and {"items", "total", "page", "page_size"} <= original.keys()
         ):
-            page_size = original["page_size"] or 1
-            total_pages = max(1, (original["total"] + page_size - 1) // page_size)
+            try:
+                page_size = int(original["page_size"] or 1)
+                total = int(original["total"] or 0)
+            except (TypeError, ValueError):
+                page_size = 1
+                total = 0
+            total_pages = max(1, (total + page_size - 1) // page_size)
             envelope = {
                 "success": True,
                 "data": original["items"],
@@ -130,7 +142,14 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
         else:
             envelope = {"success": True, "data": original, "meta": _meta(request_id)}
 
-        new_body = json.dumps(envelope).encode("utf-8")
+        try:
+            new_body = json.dumps(envelope).encode("utf-8")
+        except (TypeError, ValueError):
+            return Response(
+                content=b'{"success":false,"error":{"code":"INTERNAL_SERVER_ERROR","message":"Response serialization failed"}}',
+                status_code=500,
+                media_type="application/json",
+            )
         headers = dict(response.headers)
         headers["content-length"] = str(len(new_body))
         return Response(
@@ -200,6 +219,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         default shape."""
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         logger.warning("request_validation_error", errors=exc.errors(), path=request.url.path)
+        errors = json.loads(json.dumps(exc.errors(), default=str))
         return JSONResponse(
             status_code=422,
             content={
@@ -207,7 +227,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": "Request validation failed",
-                    "details": {"errors": exc.errors()},
+                    "details": {"errors": errors},
                 },
                 "meta": _meta(request_id),
             },

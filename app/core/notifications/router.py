@@ -7,7 +7,7 @@ Endpoints:
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_db
@@ -18,8 +18,13 @@ from app.core.notifications.schemas import (
     NotificationTestResponse,
 )
 from app.core.notifications.service import notification_dispatcher
+from app.core.security.rbac import require_role
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(
+    prefix="/notifications",
+    tags=["notifications"],
+    dependencies=[Depends(require_role("SUPER_ADMIN", "ADMIN"))],
+)
 
 
 @router.get(
@@ -28,7 +33,7 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
     summary="List recent notification audit log entries",
 )
 async def list_notification_logs(
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     channel: str | None = None,
     recipient_id: str | None = None,
     db: AsyncSession = Depends(get_db),

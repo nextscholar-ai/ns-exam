@@ -7,7 +7,14 @@ Verifies:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from integration.test_helpers import auth_header, super_admin_token
 
 
 @pytest.mark.asyncio
@@ -28,7 +35,11 @@ async def test_security_headers_present_on_response(async_client):
 @pytest.mark.asyncio
 async def test_security_headers_present_on_api_route(async_client):
     """Verify HTTP security response headers on /api/v1/ route."""
-    response = await async_client.get("/api/v1/jobs/nonexistent-id")
+    token = super_admin_token()
+    response = await async_client.get(
+        "/api/v1/jobs/nonexistent-id",
+        headers=auth_header(token),
+    )
     assert response.status_code == 404
 
     headers = response.headers

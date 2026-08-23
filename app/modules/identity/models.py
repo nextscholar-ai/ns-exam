@@ -137,7 +137,13 @@ class RefreshToken(BaseMixin, Base):
     )
 
     def is_valid(self) -> bool:
-        return self.revoked_at is None and self.expires_at > utcnow()
+        now = utcnow()
+        expires = self.expires_at
+        if expires.tzinfo is None and now.tzinfo is not None:
+            expires = expires.replace(tzinfo=now.tzinfo)
+        elif expires.tzinfo is not None and now.tzinfo is None:
+            now = now.replace(tzinfo=expires.tzinfo)
+        return self.revoked_at is None and expires > now
 
 
 class LoginHistory(Base):

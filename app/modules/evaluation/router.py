@@ -116,7 +116,10 @@ async def request_re_evaluation(
     )
 
 
-@router.post("/re-evaluation-requests/{request_public_id}/approve", response_model=EvaluationResponse)
+@router.post(
+    "/re-evaluation-requests/{request_public_id}/approve",
+    response_model=EvaluationResponse,
+)
 async def approve_re_evaluation(
     request_public_id: UUID,
     db: AsyncSession = Depends(get_db),

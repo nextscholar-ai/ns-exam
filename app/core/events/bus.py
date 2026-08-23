@@ -29,7 +29,7 @@ class EventBus:
 
     async def publish(self, event_name: str, payload: dict[str, Any]) -> None:
         logger.info("event_bus.published", event_name=event_name, payload_keys=list(payload.keys()))
-        for handler in self._subscribers.get(event_name, []):
+        for handler in list(self._subscribers.get(event_name, [])):
             try:
                 await handler(payload)
             except Exception:
