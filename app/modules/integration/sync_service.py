@@ -218,6 +218,10 @@ class SyncService:
                 results.append(await self.sync_entity_type(entity_type, mode=mode))
             except Exception as exc:  # noqa: BLE001 - one entity failing must not abort the rest
                 logger.error("erp.sync.entity_failed", entity_type=entity_type, error=str(exc))
+                try:
+                    await self.session.rollback()
+                except Exception:
+                    pass
                 results.append(
                     {"entity_type": entity_type, "status": "FAILED", "error": str(exc)}
                 )
@@ -445,8 +449,9 @@ class SyncService:
 
         for row in rows:
             # If this row's erp_id was NOT in the just-pulled set, mark as missing
-            if row.erp_id not in pulled_erp_ids:  # type: ignore[attr-defined]
-                row.sync_status = "MISSING_IN_ERP"  # type: ignore[attr-defined]
+            row_erp_id = getattr(row, "erp_id", None) or getattr(row, "erp_student_id", None) or getattr(row, "erp_teacher_id", None)
+            if row_erp_id and str(row_erp_id) not in pulled_erp_ids:
+                row.sync_status = "MISSING_IN_ERP"
 
         await self.session.flush()
 
@@ -466,6 +471,9 @@ class SyncService:
         school_erp_id = item.get("school_erp_id")
         if school_erp_id:
             school_id = await self._resolve_erp_id("school_id", str(school_erp_id))
+        if school_id is None:
+            first_school = (await self.session.execute(select(School.id))).scalars().first()
+            school_id = first_school
 
         # Resolve class_id from class_erp_id
         class_id = None
@@ -473,6 +481,7 @@ class SyncService:
         if class_erp_id:
             class_id = await self._resolve_erp_id("class_id", str(class_erp_id))
 
+        user = None
         # Upsert User record if user_erp_id provided
         if user_erp_id:
             user = (
@@ -550,7 +559,11 @@ class SyncService:
         school_erp_id = item.get("school_erp_id")
         if school_erp_id:
             school_id = await self._resolve_erp_id("school_id", str(school_erp_id))
+        if school_id is None:
+            first_school = (await self.session.execute(select(School.id))).scalars().first()
+            school_id = first_school or 1
 
+        user = None
         # Upsert User record if user_erp_id provided
         if user_erp_id:
             user = (
@@ -585,9 +598,10 @@ class SyncService:
         ).scalar_one_or_none()
 
         data = {
+            "erp_id": erp_id,
             "erp_teacher_id": erp_id,
             "name": item.get("name", ""),
-            "school_id": school_id or 0,  # TeacherProfile requires school_id
+            "school_id": school_id,
             "user_id": user.id if user_erp_id and user else 0,
             "sync_status": "SYNCED",
             "synced_at": datetime.now(tz=timezone.utc),

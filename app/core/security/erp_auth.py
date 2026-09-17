@@ -127,7 +127,7 @@ class ERPAuthClient:
 
         url = f"{self._base_url}{self._login_path}"
         headers = {"X-API-Key": self._api_key}
-        body = {"identifier": identifier, "password": password}
+        body = {"identifier": identifier, "email": identifier, "password": password}
 
         try:
             client = get_http_client()
@@ -148,24 +148,48 @@ class ERPAuthClient:
         except (ValueError, Exception) as exc:
             logger.error("erp_auth.login_invalid_json", error=str(exc))
             raise ExternalServiceError("ERP returned invalid response") from exc
-        if not payload.get("valid"):
+
+        user_data = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+        profile_data = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
+
+        is_valid = payload.get("valid", bool(payload.get("access_token")))
+        if not is_valid:
             logger.warning("erp_auth.login_invalid_payload", identifier=identifier)
             raise UnauthorizedError("Invalid ERP credentials")
 
-        erp_user_id = payload.get("user_id") or payload.get("public_id")
+        erp_user_id = (
+            payload.get("user_id")
+            or payload.get("public_id")
+            or user_data.get("user_code")
+            or user_data.get("id")
+        )
         if erp_user_id is None:
             logger.error("erp_auth.login_missing_user_id", identifier=identifier)
             raise UnauthorizedError("ERP response missing user identifier")
-        logger.info("erp_auth.login_validated", erp_user_id=erp_user_id)
+
+        role = payload.get("role") or user_data.get("role") or ""
+        name = (
+            payload.get("name")
+            or profile_data.get("student_name")
+            or profile_data.get("teacher_name")
+            or profile_data.get("admin_name")
+            or user_data.get("user_code")
+            or str(erp_user_id)
+        )
+        email = payload.get("email") or user_data.get("email")
+        phone = payload.get("phone") or user_data.get("phone")
+        school_id = payload.get("school_erp_id") or profile_data.get("school_id")
+
+        logger.info("erp_auth.login_validated", erp_user_id=str(erp_user_id))
         return ERPCredentialResult(
             valid=True,
             erp_user_id=str(erp_user_id),
-            user_type=self._normalize_role(payload.get("role", "")),
-            school_erp_id=payload.get("school_erp_id"),
+            user_type=self._normalize_role(role),
+            school_erp_id=school_id,
             board_erp_id=payload.get("board_erp_id"),
-            name=payload.get("name", ""),
-            email=payload.get("email"),
-            phone=payload.get("phone"),
+            name=name,
+            email=email,
+            phone=phone,
         )
 
     @staticmethod

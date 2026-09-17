@@ -13,6 +13,7 @@ from app.core.exceptions import UnauthorizedError
 from app.core.security.rbac import CurrentUser, get_current_user
 from app.modules.identity.schemas import (
     ERPCredentialsLoginRequest,
+    ERPTokenLoginRequest,
     GuestStartRequest,
     GuestTokenResponse,
     LocalLoginRequest,
@@ -33,14 +34,20 @@ async def ping() -> dict[str, str]:
 
 @router.post("/auth/erp/login", response_model=TokenResponse)
 async def erp_login(
+    payload: ERPTokenLoginRequest | None = None,
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Client sends the ERP-issued token via `Authorization: Bearer <erp_token>`
-    (Phase 6 §6.1) - NOT the Exam-Engine JWT."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise UnauthorizedError("Missing ERP token in Authorization header")
-    erp_token = authorization.split(" ", 1)[1]
+    (Phase 6 §6.1) or in JSON body `{"token": "<erp_token>"}`."""
+    erp_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        erp_token = authorization.split(" ", 1)[1].strip()
+    elif payload and payload.token:
+        erp_token = payload.token.strip()
+
+    if not erp_token:
+        raise UnauthorizedError("Missing ERP token in Authorization header or request body")
 
     service = IdentityService(db)
     erp_result = await service.validate_erp_token(erp_token)

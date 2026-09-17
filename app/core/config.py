@@ -52,6 +52,8 @@ class LoggingSettings(BaseSettings):
 
     level: str = Field("INFO", alias="LOG_LEVEL")
     format: str = Field("json", alias="LOG_FORMAT")
+    console_level: str = Field("WARNING", alias="CONSOLE_LOG_LEVEL")
+    file_path: str = Field("logs/app.log", alias="LOG_FILE_PATH")
 
 
 class NotificationSettings(BaseSettings):

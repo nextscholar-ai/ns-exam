@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import asyncio
 
+# Import all module models so Base.metadata is fully populated
+import app.modules.academic.models  # noqa: F401
+import app.modules.identity.models  # noqa: F401
+
 from app.core.db.session import db_session_scope
 from app.core.logging import configure_logging, get_logger
 from app.core.security.password import hash_password

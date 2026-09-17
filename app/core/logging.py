@@ -91,48 +91,88 @@ class ColorFormatter(logging.Formatter):
 def configure_logging(log_dir: str = "logs") -> None:
     """Call once at application startup (see main.py)."""
     log_level = getattr(logging, settings.logging.level.upper(), logging.INFO)
+    console_level_name = getattr(settings.logging, "console_level", "WARNING").upper()
+    console_level = getattr(logging, console_level_name, logging.WARNING)
 
-    # Standard logging setup
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
+    root_logger.handlers.clear()
 
-    # File Handler (rotating logs/app.log)
     try:
         os.makedirs(log_dir, exist_ok=True)
-        file_handler = logging.handlers.RotatingFileHandler(
-            os.path.join(log_dir, "app.log"),
-            maxBytes=5 * 1024 * 1024,
-            backupCount=5,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(JSONFormatter())
-        file_handler.setLevel(log_level)
-        if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root_logger.handlers):
-            root_logger.addHandler(file_handler)
+        log_file_path = getattr(settings.logging, "file_path", os.path.join(log_dir, "app.log"))
     except Exception:
-        pass
+        log_file_path = os.path.join(log_dir, "app.log")
 
     if HAS_STRUCTLOG:
         shared_processors: list = [
             structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.add_logger_name,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
         ]
 
-        if settings.logging.format == "json":
-            renderer = structlog.processors.JSONRenderer()
-        else:
-            renderer = structlog.dev.ConsoleRenderer(colors=True)
-
         structlog.configure(
-            processors=[*shared_processors, renderer],
-            wrapper_class=structlog.make_filtering_bound_logger(log_level),
-            context_class=dict,
-            logger_factory=structlog.PrintLoggerFactory(),
+            processors=[
+                *shared_processors,
+                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+            ],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
+
+        # 1. File Handler (writes structured JSON lines to logs/app.log)
+        try:
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file_path,
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setFormatter(
+                structlog.stdlib.ProcessorFormatter(
+                    processor=structlog.processors.JSONRenderer(),
+                    foreign_pre_chain=shared_processors,
+                )
+            )
+            file_handler.setLevel(log_level)
+            root_logger.addHandler(file_handler)
+        except Exception:
+            pass
+
+        # 2. Console Handler (clean human-readable formatting, defaults to WARNING so terminal is not flooded)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(
+            structlog.stdlib.ProcessorFormatter(
+                processor=structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty()),
+                foreign_pre_chain=shared_processors,
+            )
+        )
+        console_handler.setLevel(console_level)
+        root_logger.addHandler(console_handler)
+
+    else:
+        # Fallback when structlog is not present
+        try:
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file_path,
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setFormatter(JSONFormatter())
+            file_handler.setLevel(log_level)
+            root_logger.addHandler(file_handler)
+        except Exception:
+            pass
+
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(ColorFormatter())
+        console_handler.setLevel(console_level)
+        root_logger.addHandler(console_handler)
 
 
 class BoundLoggerAdapter:

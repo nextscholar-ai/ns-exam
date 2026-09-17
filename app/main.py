@@ -9,7 +9,7 @@ Phase 4 adds shared HTTP client lifecycle management.
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_v1_router
@@ -84,6 +84,25 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["health"])
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post("/internal/cache/invalidate", tags=["internal"])
+    async def internal_cache_invalidate(
+        entity: str | None = None,
+        school_id: str | None = None,
+        token: str | None = Header(default=None),
+        x_webhook_token: str | None = Header(default=None, alias="X-Webhook-Token"),
+        authorization: str | None = Header(default=None),
+    ):
+        from app.modules.integration.erp_client import invalidate_academic_cache
+        check_token = token or x_webhook_token
+        if not check_token and authorization and authorization.startswith("Bearer "):
+            check_token = authorization.split(" ", 1)[1].strip()
+        expected = settings.erp.webhook_token
+        if expected and check_token and check_token != expected:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Invalid token")
+        removed = invalidate_academic_cache(entity, school_id)
+        return {"status": "invalidated", "entity": entity, "school_id": school_id, "removed_keys": removed}
 
     @app.get("/health/db", tags=["health"])
     async def health_db() -> dict[str, str]:

@@ -40,6 +40,11 @@ class ERPCredentialsLoginRequest(BaseModel):
     password: str
 
 
+class ERPTokenLoginRequest(BaseModel):
+    """ERP login with token in body (optional fallback if Authorization header not used)."""
+    token: str | None = None
+
+
 class GuestStartRequest(BaseModel):
     name: str
     school_hint: str | None = None  # free-text, not FK-validated - guest may have no school
